@@ -17,7 +17,8 @@ export type PanelView =
   | { kind: 'vehicle'; vehicleId: string }
   | { kind: 'place'; placeId: string }
   | { kind: 'vehicles' }
-  | { kind: 'plan'; toStopId?: string; toPlaceId?: string };
+  | { kind: 'plan'; toStopId?: string; toPlaceId?: string }
+  | { kind: 'privacy' };
 
 export function viewKey(view: PanelView): string {
   switch (view.kind) {

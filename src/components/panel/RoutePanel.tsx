@@ -14,6 +14,7 @@ import { Banner } from '../ui/Banner';
 import { btn } from '../ui/buttonStyles';
 import { Section } from '../ui/Section';
 import { NotFoundPanel, PanelHeader } from './PanelHeader';
+import { RouteTimetableSection } from '../schedule/TimetableSections';
 
 function fareText(route: Route): string {
   const f = route.fare;
@@ -169,6 +170,7 @@ export function RoutePanel({ variantId }: { variantId: string }) {
           })}
         </ol>
       </Section>
+    <RouteTimetableSection variantId={variantId} />
     </div>
   );
 }

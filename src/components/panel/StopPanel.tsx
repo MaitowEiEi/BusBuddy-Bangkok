@@ -13,6 +13,8 @@ import { DirectionBadge, RouteBadge, ShortTurnBadge } from '../ui/Badges';
 import { Section } from '../ui/Section';
 import { ArrivalCard } from './ArrivalCard';
 import { NotFoundPanel, PanelHeader } from './PanelHeader';
+import { StopAlertsSection } from '../alerts/AlertSections';
+import { StopTimetableSection } from '../schedule/TimetableSections';
 
 export function StopPanel({ stopId }: { stopId: string }) {
   const { network, snapshot, origin, navigate } = useApp();
@@ -97,6 +99,8 @@ export function StopPanel({ stopId }: { stopId: string }) {
           </p>
         )}
       </Section>
+    <StopAlertsSection stopId={stopId} />
+    <StopTimetableSection stopId={stopId} />
     </div>
   );
 }

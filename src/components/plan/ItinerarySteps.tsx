@@ -9,6 +9,7 @@ import { useApp } from '../../state/AppContext';
 import { CrowdBadge, QualityBadge, RouteBadge, ShortTurnBadge } from '../ui/Badges';
 import { Banner } from '../ui/Banner';
 import { btn } from '../ui/buttonStyles';
+import { AlertToggle } from '../alerts/AlertToggle';
 
 const CATCH: Record<'ok' | 'tight' | 'miss', { text: string; cls: string; Icon: LucideIcon }> = {
   ok: { text: 'เดินไปทันคันนี้ (ประมาณการ)', cls: 'text-emerald-800', Icon: CheckCircle2 },
@@ -107,6 +108,7 @@ function LegSteps({ itinerary: it, leg, index }: { itinerary: Itinerary; leg: It
             <button type="button" onClick={() => navigate({ kind: 'vehicle', vehicleId })} className={btn.ghost}>
               ดูรถคันนี้บนแผนที่
             </button>
+            <AlertToggle vehicleId={vehicleId} stopId={leg.boardStopId} variantId={leg.chosen.variantId} etaSec={leg.boardAtSec} />
           </div>
         ) : (
           <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">

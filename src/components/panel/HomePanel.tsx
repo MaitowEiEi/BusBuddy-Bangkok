@@ -1,9 +1,10 @@
-import { List, Navigation } from 'lucide-react';
+import { List, Navigation, ShieldCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { arrivalsNearOrigin } from '../../domain/nearby';
 import { nearbyStops } from '../../domain/walking';
 import { formatDistance } from '../../lib/format';
 import { useApp } from '../../state/AppContext';
+import { ActiveAlertsSection } from '../alerts/AlertSections';
 import { FavoritesSection } from '../FavoritesSection';
 import { LiveStatus } from '../LiveStatus';
 import { LocationControl } from '../LocationControl';
@@ -42,6 +43,8 @@ export function HomePanel() {
           วางแผนการเดินทาง
         </button>
       </div>
+
+      <ActiveAlertsSection />
 
       <NoticeList includeInfo={false} />
 
@@ -99,10 +102,14 @@ export function HomePanel() {
 
       <FavoritesSection />
 
-      <div className="px-4">
+      <div className="grid gap-2 px-4">
         <button type="button" onClick={() => navigate({ kind: 'vehicles' })} className={`${btn.secondary} w-full`}>
           <List aria-hidden className="h-4 w-4" />
           ดูรถทั้งหมดเป็นรายการ (แทนแผนที่)
+        </button>
+        <button type="button" onClick={() => navigate({ kind: 'privacy' })} className={`${btn.ghost} w-full`}>
+          <ShieldCheck aria-hidden className="h-4 w-4" />
+          ความเป็นส่วนตัวและข้อมูลในเครื่อง
         </button>
       </div>
     </div>
