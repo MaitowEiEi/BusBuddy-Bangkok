@@ -6,6 +6,8 @@ export type DataQuality = 'live' | 'delayed' | 'unavailable';
 export type ScenarioId = 'normal' | 'delayed_data' | 'crowded' | 'unknown_eta' | 'disruption';
 export type VehicleStatus = 'layover' | 'moving' | 'at_stop';
 export type VehicleType = 'ev_low_floor' | 'ac_standard' | 'non_ac_standard';
+export type RouteMode = 'bus' | 'bts' | 'mrt' | 'rail';
+export type FeatureSource = 'gtfs' | 'sim'; // gtfs = real data from Namtang, sim = simulated
 
 export interface Stop {
   id: string;
@@ -46,6 +48,12 @@ export interface Route {
   firstDeparture: string;
   lastDeparture: string;
   frequency: FrequencyPeriod[];
+    // Set only for real Namtang data
+  mode?: RouteMode;
+  agencyTh?: string;
+  legacyName?: string;
+  fareKnown?: boolean;
+  scheduleSource?: 'today' | 'other_day' | 'estimated';
 }
 
 export type PathPoint = { stopId: string } | { via: LatLng };
@@ -89,6 +97,7 @@ export interface Vehicle {
   hasOccupancySensor: boolean;
   baseLoad: number;
   loadSeed: number;
+  featureSource?: { ac: FeatureSource; wheelchair: FeatureSource };
 }
 
 export interface Disruption {

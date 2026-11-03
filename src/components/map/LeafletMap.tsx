@@ -1,9 +1,11 @@
 import L from 'leaflet';
-import { useEffect, useRef, type MutableRefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { prefersReducedMotion } from '../../hooks/useMediaQuery';
 import type { LiveSnapshot, TransitNetwork } from '../../types/transit';
 import type { Origin } from '../../types/ui';
-import { baseVariants, directionArrows, shapeFrom, vehicleLabel, type MapScene, type MapTarget } from './mapModel';
+import {
+  baseVariants, directionArrows, pickStops, rankedStops, shapeFrom, vehicleLabel, type MapScene, type MapTarget,
+} from './mapModel';
 
 interface Props {
   network: TransitNetwork;
@@ -17,6 +19,11 @@ interface Props {
 }
 
 interface Layers { routes: L.LayerGroup; stops: L.LayerGroup; vehicles: L.LayerGroup; overlay: L.LayerGroup }
+interface Viewport { zoom: number; bounds: L.LatLngBounds }
+
+/** Home map: buses appear from this zoom as dots, and get route numbers from VEHICLE_LABEL_ZOOM. */
+const VEHICLES_MIN_ZOOM = 15;
+const VEHICLE_LABEL_ZOOM = 16;
 
 function arrowIcon(color: string, bearing: number): L.DivIcon {
   return L.divIcon({
@@ -39,8 +46,12 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
   onFailRef.current = onTilesFailed;
   sceneRef.current = scene;
 
+  const [viewport, setViewport] = useState<Viewport | null>(null);
+  const ranked = useMemo(() => rankedStops(network), [network]);
+
   const highlightKey = scene.highlights.map((h) => `${h.variantId}@${h.fromStopIndex}-${h.toStopIndex ?? 'end'}`).join('|');
-  const { selectedStopId, selectedVehicleId, place } = scene;
+  const { selectedStopId, selectedVehicleId, place, focused } = scene;
+  const zoomedOut = (viewport?.zoom ?? 14) < 14;
 
   // Create the map once; tear everything down on unmount.
   useEffect(() => {
@@ -71,6 +82,11 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     map.on('zoomstart', () => { window.clearTimeout(noAnimTimer); el.classList.add('bb-noanim'); });
     map.on('zoomend', () => { noAnimTimer = window.setTimeout(() => el.classList.remove('bb-noanim'), 120); });
 
+    // Redraw stops and buses for the visible area after each pan or zoom.
+    const updateViewport = () => setViewport({ zoom: map.getZoom(), bounds: map.getBounds().pad(0.2) });
+    map.on('moveend', updateViewport);
+    updateViewport();
+
     layersRef.current = {
       routes: L.layerGroup().addTo(map),
       stops: L.layerGroup().addTo(map),
@@ -93,39 +109,68 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     };
   }, []);
 
-  // Route lines + direction arrows
+  // Route lines: all routes (thin) on the home map, only the selected ones when something is open.
   useEffect(() => {
     const g = layersRef.current?.routes;
     if (!g) return;
     g.clearLayers();
-    const highlights = sceneRef.current.highlights;
-    const dimmed = highlights.length > 0;
-    for (const v of baseVariants(network)) {
-      L.polyline(v.shape, { color: network.routeById[v.routeId].color, weight: dimmed ? 3 : 5, opacity: dimmed ? 0.25 : 0.7 })
-        .on('click', () => onSelectRef.current({ kind: 'variant', id: v.id }))
-        .addTo(g);
+    const { highlights, focused: isFocused } = sceneRef.current;
+    if (!isFocused) {
+      for (const v of baseVariants(network)) {
+        const route = network.routeById[v.routeId];
+        if (!route) continue;
+        const rail = route.mode !== undefined && route.mode !== 'bus';
+        L.polyline(v.shape, {
+          color: route.color,
+          weight: (zoomedOut ? 2 : 3) + (rail ? 2 : 0),
+          opacity: rail ? 0.85 : 0.55,
+        })
+          .on('click', () => onSelectRef.current({ kind: 'variant', id: v.id }))
+          .addTo(g);
+      }
     }
     for (const h of highlights) {
       const v = network.variantById[h.variantId];
-      if (!v) continue;
-      const color = network.routeById[v.routeId].color;
+      const route = v && network.routeById[v.routeId];
+      if (!v || !route) continue;
       const pts = shapeFrom(v, h.fromStopIndex, h.toStopIndex);
       L.polyline(pts, { color: '#ffffff', weight: 10, opacity: 0.9, interactive: false }).addTo(g);
-      L.polyline(pts, { color, weight: 6, opacity: 1 })
+      L.polyline(pts, { color: route.color, weight: 6, opacity: 1 })
         .on('click', () => onSelectRef.current({ kind: 'variant', id: v.id }))
         .addTo(g);
       for (const a of directionArrows(pts)) {
-        L.marker(a.position, { icon: arrowIcon(color, a.bearing), interactive: false, keyboard: false, zIndexOffset: -500 }).addTo(g);
+        L.marker(a.position, { icon: arrowIcon(route.color, a.bearing), interactive: false, keyboard: false, zIndexOffset: -500 }).addTo(g);
       }
     }
-  }, [network, highlightKey]);
+  }, [network, highlightKey, focused, zoomedOut]);
 
-  // Stops (focusable, Enter activates)
+  // Stops: main interchanges when zoomed out, every stop when zoomed in, only related stops when focused.
   useEffect(() => {
     const g = layersRef.current?.stops;
-    if (!g) return;
+    if (!g || !viewport) return;
     g.clearLayers();
-    for (const s of network.stops) {
+    const { highlights, focused: isFocused } = sceneRef.current;
+
+    const must = new Set<string>();
+    if (selectedStopId) must.add(selectedStopId);
+    const inScene = new Set<string>();
+    for (const h of highlights) {
+      const v = network.variantById[h.variantId];
+      if (!v) continue;
+      const from = Math.max(0, h.fromStopIndex);
+      const to = h.toStopIndex ?? v.stopIds.length - 1;
+      for (const id of v.stopIds.slice(from, to + 1)) inScene.add(id);
+      for (const id of [v.stopIds[from], v.stopIds[to]]) if (id) must.add(id); // board / alight / ends
+    }
+
+    const shown = pickStops(network, ranked, {
+      zoom: viewport.zoom,
+      contains: (p) => viewport.bounds.contains(p),
+      candidates: isFocused ? inScene : null,
+      must,
+    });
+
+    for (const s of shown) {
       const selected = s.id === selectedStopId;
       const m = L.marker(s.position, {
         icon: L.divIcon({
@@ -143,32 +188,45 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
       m.addTo(g);
       m.getElement()?.setAttribute('aria-label', `ป้าย${s.nameTh}`);
     }
-  }, [network, selectedStopId]);
+  }, [network, ranked, selectedStopId, highlightKey, focused, viewport]);
 
   // Vehicles: update existing markers in place so focus and selection survive refreshes
   useEffect(() => {
     const g = layersRef.current?.vehicles;
     if (!g || !snapshot) return;
-    const highlighted = new Set(sceneRef.current.highlights.map((h) => h.variantId));
+    const { highlights, focused: isFocused } = sceneRef.current;
+    const zoom = viewport?.zoom ?? 14;
+    const routeFilter = new Set<string>();
+    for (const h of highlights) {
+      const v = network.variantById[h.variantId];
+      if (v) routeFilter.add(v.routeId);
+    }
     const seen = new Set<string>();
 
     for (const vs of snapshot.vehicles) {
-      seen.add(vs.vehicleId);
       const route = network.routeById[vs.routeId];
+      if (!route) continue;
       const selected = vs.vehicleId === selectedVehicleId;
-      const cls = [
-        'bb-veh',
-        highlighted.size > 0 && !highlighted.has(vs.variantId) ? 'bb-veh--dim' : '',
-        selected ? 'bb-veh--selected' : '',
-        vs.quality !== 'live' ? 'bb-veh--stale' : '',
-      ].filter(Boolean).join(' ');
+      const visible =
+        selected ||
+        (isFocused
+          ? routeFilter.has(vs.routeId)
+          : zoom >= VEHICLES_MIN_ZOOM && (!viewport || viewport.bounds.contains(vs.position)));
+      if (!visible) continue;
+      seen.add(vs.vehicleId);
+
+      const compact = !selected && !isFocused && zoom < VEHICLE_LABEL_ZOOM;
+      const cls = ['bb-veh', selected ? 'bb-veh--selected' : '', vs.quality !== 'live' ? 'bb-veh--stale' : '']
+        .filter(Boolean)
+        .join(' ');
       const flag = vs.quality === 'delayed' ? '!' : vs.quality === 'unavailable' ? '?' : '';
-      const html =
-        `<div class="${cls}" style="--c:${route.color}">` +
-        `<span class="bb-veh__arrow" style="transform:rotate(${Math.round(vs.bearingDeg)}deg)"></span>` +
-        `<span class="bb-veh__body">${route.shortName}</span>` +
-        (flag ? `<span class="bb-veh__flag">${flag}</span>` : '') +
-        '</div>';
+      const html = compact
+        ? `<div class="bb-veh-dot" style="--c:${route.color}"></div>`
+        : `<div class="${cls}" style="--c:${route.color}">` +
+          `<span class="bb-veh__arrow" style="transform:rotate(${Math.round(vs.bearingDeg)}deg)"></span>` +
+          `<span class="bb-veh__body">${route.shortName}</span>` +
+          (flag ? `<span class="bb-veh__flag">${flag}</span>` : '') +
+          '</div>';
       const label = vehicleLabel(network, vs);
       const zIndex = selected ? 2000 : 1000;
 
@@ -202,7 +260,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
         vehicleMarkers.current.delete(id);
       }
     }
-  }, [network, snapshot, selectedVehicleId, highlightKey]);
+  }, [network, snapshot, selectedVehicleId, highlightKey, focused, viewport]);
 
   // Origin + selected place
   useEffect(() => {

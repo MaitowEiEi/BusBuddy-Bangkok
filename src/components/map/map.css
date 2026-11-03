@@ -159,3 +159,14 @@
 .bb-svg-veh {
     transition: transform 0.9s linear;
 }
+
+/* Small route-coloured dot for simulated buses on the zoomed-out home map */
+.bb-veh-dot {
+  width: 14px;
+  height: 14px;
+  margin: 13px; /* centres the dot in the 40 × 40 marker */
+  border-radius: 9999px;
+  background: var(--c);
+  border: 2px solid #fff;
+  box-shadow: 0 0 0 1px rgb(15 23 42 / 0.4);
+}

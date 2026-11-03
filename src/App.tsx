@@ -13,10 +13,11 @@ import { useNetwork } from './hooks/useNetwork';
 import { useNow } from './hooks/useNow';
 import { usePreferences } from './hooks/usePreferences';
 import { STORAGE_KEYS } from './lib/storage';
-import { mockTransitProvider } from './services/mockTransitProvider';
+import { activeProvider } from './services/activeProvider';
 import { AppContext, type AppContextValue } from './state/AppContext';
 import type { ScenarioId, TransitNetwork } from './types/transit';
 import { viewKey, type Origin, type PanelView } from './types/ui';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 
 const HOME: PanelView = { kind: 'home' };
 const MAX_HISTORY = 20;
@@ -30,7 +31,7 @@ function FullScreenMessage({ text, isError = false }: { text: string; isError?: 
 }
 
 export default function App() {
-  const { network, error } = useNetwork(mockTransitProvider);
+  const { network, error } = useNetwork(activeProvider);
   if (error) return <FullScreenMessage text={error} isError />;
   if (!network) return <FullScreenMessage text="กำลังโหลดข้อมูลเส้นทางจำลอง…" />;
   return (
@@ -42,7 +43,7 @@ export default function App() {
 
 function AppShell({ network }: { network: TransitNetwork }) {
   const [scenarioId, setScenarioId] = useLocalStorage<ScenarioId>(STORAGE_KEYS.scenario, 'normal', isScenarioId);
-  const { snapshot, error: liveError, refresh } = useLiveSnapshot(mockTransitProvider, scenarioId, true);
+  const { snapshot, error: liveError, refresh } = useLiveSnapshot(activeProvider, scenarioId, true);
   const now = useNow(1000);
   const [prefs, setPrefs] = usePreferences();
   const [gpsOrigin, setGpsOrigin] = useState<Origin | null>(null);
@@ -52,7 +53,7 @@ function AppShell({ network }: { network: TransitNetwork }) {
   const panelScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
+    if (!import.meta.env.DEV || activeProvider.id !== 'mock') return;
     const issues = validateNetwork(network);
     if (issues.length > 0) console.warn('[BusBuddy] ข้อมูลจำลองไม่สอดคล้อง', issues);
   }, [network]);
@@ -107,7 +108,9 @@ function AppShell({ network }: { network: TransitNetwork }) {
           <div className="flex w-[26rem] shrink-0 flex-col border-r border-slate-200 bg-white xl:w-[28rem]">
             <AppHeader />
             <main id="bb-panel" tabIndex={-1} ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto">
+            <ErrorBoundary key={key} onReset={goHome}>
               <PanelRouter />
+            </ErrorBoundary>
             </main>
           </div>
           <section aria-label="แผนที่" className="relative min-w-0 flex-1">
@@ -121,7 +124,9 @@ function AppShell({ network }: { network: TransitNetwork }) {
             <MapView insetRef={insetRef} />
             <Sheet viewKey={key} insetRef={insetRef}>
               <div id="bb-panel" tabIndex={-1}>
+              <ErrorBoundary key={key} onReset={goHome}>
                 <PanelRouter />
+              </ErrorBoundary>
               </div>
             </Sheet>
           </main>

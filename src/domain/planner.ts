@@ -116,12 +116,23 @@ function endpointStops(net: TransitNetwork, point: PlanPoint): NearbyStop[] {
   return [{ stop: exact, distanceM: 0, walkMin: 0 }, ...list.filter((n) => n.stop.id !== exact.id)].slice(0, ACCESS_LIMIT);
 }
 
+/**
+ * Board and alight positions for a ride between two stops on each variant.
+ * Real routes can pass the same stop twice (loops, turnarounds at the terminal),
+ * so check every occurrence instead of only the first, and keep the shortest ride.
+ */
 function legOptions(net: TransitNetwork, fromStopId: string, toStopId: string): LegOption[] {
   const out: LegOption[] = [];
   for (const v of boardableVariants(net, fromStopId)) {
-    const i = v.stopIds.indexOf(fromStopId);
-    const j = v.stopIds.indexOf(toStopId);
-    if (j > i) out.push({ variantId: v.id, boardIndex: i, alightIndex: j });
+    let best: LegOption | null = null;
+    for (let i = 0; i < v.stopIds.length - 1; i++) {
+      if (v.stopIds[i] !== fromStopId) continue;
+      const j = v.stopIds.indexOf(toStopId, i + 1);
+      if (j !== -1 && (!best || j - i < best.alightIndex - best.boardIndex)) {
+        best = { variantId: v.id, boardIndex: i, alightIndex: j };
+      }
+    }
+    if (best) out.push(best);
   }
   return out;
 }
@@ -144,6 +155,7 @@ function buildPatterns(net: TransitNetwork, access: NearbyStop[], egress: Nearby
     }
     for (const t of transferStops) {
       const first = legOptions(net, a.stop.id, t);
+      if (first.length === 0) continue;
       const firstRoutes = new Set(first.map((o) => net.variantById[o.variantId].routeId));
       for (const e of egress) {
         if (e.stop.id === t || e.stop.id === a.stop.id) continue;
@@ -198,6 +210,7 @@ function evaluate(ctx: Ctx, pattern: Pattern, mode: Itinerary['mode']): Itinerar
   let skippedCrowded = false;
 
   for (const lp of pattern.legs) {
+    if (lp.options.length === 0) return null; // no route serves this ride; skip the whole itinerary
     const ready = clock + (legs.length > 0 ? TRANSFER_BUFFER_SEC : 0);
     const ids = new Set(lp.options.map((o) => o.variantId));
     const pool = ctx.arrivalsAt(lp.boardStopId).filter(

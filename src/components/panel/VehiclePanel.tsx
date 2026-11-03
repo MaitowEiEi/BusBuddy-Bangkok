@@ -8,6 +8,7 @@ import { Banner } from '../ui/Banner';
 import { OccupancyMeter } from '../ui/OccupancyMeter';
 import { Section } from '../ui/Section';
 import { NotFoundPanel, PanelHeader } from './PanelHeader';
+import { AmenityBadges } from '../ui/AmenityBadges';
 
 export function VehiclePanel({ vehicleId }: { vehicleId: string }) {
   const { network, snapshot, now, navigate } = useApp();
@@ -33,6 +34,10 @@ export function VehiclePanel({ vehicleId }: { vehicleId: string }) {
         title={`รถ ${vehicle.fleetCode}`}
         subtitle="รหัสรถสมมติสำหรับต้นแบบ ไม่ใช่ทะเบียนรถจริง"
       />
+      <div className="px-4">
+        <AmenityBadges vehicleId={vehicleId} />
+      </div>
+
 
       {!vs || !variant ? (
         <p className="px-4 text-sm text-ink-muted">กำลังโหลดข้อมูลรถ…</p>

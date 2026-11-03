@@ -13,6 +13,7 @@ import type { Arrival } from '../../types/transit';
 import { CrowdBadge, DirectionBadge, InfoChip, QualityBadge, RouteBadge, ServiceBadge, ShortTurnBadge } from '../ui/Badges';
 import { Banner } from '../ui/Banner';
 import { btn } from '../ui/buttonStyles';
+import { AmenityBadges } from '../ui/AmenityBadges';
 
 interface ArrivalCardProps {
   arrival: Arrival;
@@ -108,6 +109,10 @@ export function ArrivalCard({ arrival: a, walk, feasibility, showStopName = fals
         </span>
         <span className="sr-only">แตะเพื่อดูรายละเอียดรถคันนี้</span>
       </button>
+      
+      <div className="px-4 pb-3">
+        <AmenityBadges vehicleId={a.vehicleId} size="sm" />
+      </div>
 
       {(a.crowd === 'crowded' || a.crossesDisruption) && (
         <div className="space-y-2 px-4 pb-3">
