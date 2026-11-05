@@ -4,7 +4,7 @@ import {
 } from 'lucide-react';
 import { useId } from 'react';
 import type { Itinerary } from '../../domain/planner';
-import { formatClockRange, formatDistance, formatFareRange } from '../../lib/format';
+import { formatClockRange, formatDistance, formatFareEstimate } from '../../lib/format';
 import { useApp } from '../../state/AppContext';
 import { CrowdBadge, InfoChip, RouteBadge } from '../ui/Badges';
 import { ItinerarySteps } from './ItinerarySteps';
@@ -80,17 +80,30 @@ export function ItineraryCard({ itinerary: it, nowMs, expanded, onToggle, tags, 
 
         <span className="flex flex-wrap items-center gap-1">
           {it.access.distanceM > 0 && <Footprints aria-hidden className="h-4 w-4 text-ink-muted" />}
-          {it.legs.map((leg, i) => (
-            <span key={`${leg.boardStopId}-${i}`} className="flex items-center gap-1">
-              {(i > 0 || it.access.distanceM > 0) && <ChevronRight aria-hidden className="h-4 w-4 text-slate-400" />}
-              {routesForLeg(network, leg).map((r, k) => (
-                <span key={r.id} className="flex items-center gap-1">
-                  {k > 0 && <span className="text-xs text-ink-muted">หรือ</span>}
-                  <RouteBadge route={r} size="sm" />
-                </span>
-              ))}
-            </span>
-          ))}
+          {it.legs.map((leg, i) => {
+            const routes = routesForLeg(network, leg);
+            const shown = routes.slice(0, 3);
+            return (
+              <span key={`${leg.boardStopId}-${i}`} className="flex items-center gap-1">
+                {leg.transferWalk && (
+                  <>
+                    <ChevronRight aria-hidden className="h-4 w-4 text-slate-400" />
+                    <Footprints aria-hidden className="h-4 w-4 text-ink-muted" />
+                  </>
+                )}
+                {(i > 0 || it.access.distanceM > 0) && <ChevronRight aria-hidden className="h-4 w-4 text-slate-400" />}
+                {shown.map((r, k) => (
+                  <span key={r.id} className="flex items-center gap-1">
+                    {k > 0 && <span className="text-xs text-ink-muted">หรือ</span>}
+                    <RouteBadge route={r} size="sm" />
+                  </span>
+                ))}
+                {routes.length > shown.length && (
+                  <span className="text-xs text-ink-muted">+{routes.length - shown.length} สาย</span>
+                )}
+              </span>
+            );
+          })}
           {it.egress.distanceM > 0 && (
             <>
               <ChevronRight aria-hidden className="h-4 w-4 text-slate-400" />
@@ -105,7 +118,7 @@ export function ItineraryCard({ itinerary: it, nowMs, expanded, onToggle, tags, 
         <span className="mt-2 flex flex-wrap gap-1.5">
           <InfoChip icon={Shuffle}>{it.transfers === 0 ? 'ไม่ต้องเปลี่ยนรถ' : `เปลี่ยนรถ ${it.transfers} ครั้ง`}</InfoChip>
           <InfoChip icon={Footprints}>{it.walkM === 0 ? 'แทบไม่ต้องเดิน' : `เดินรวม ${formatDistance(it.walkM)}`}</InfoChip>
-          <InfoChip icon={Banknote}>~{formatFareRange(it.fare)}</InfoChip>
+          <InfoChip icon={Banknote}>{formatFareEstimate(it.fare, it.fareKnown)}</InfoChip>
           <CrowdBadge level={it.crowd} />
         </span>
 

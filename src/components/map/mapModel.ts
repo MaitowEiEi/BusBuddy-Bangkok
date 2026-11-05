@@ -43,11 +43,31 @@ export function baseVariants(net: TransitNetwork): RouteVariant[] {
   return [...best.values()];
 }
 
+function pointAtM(shape: LatLng[], cum: number[], m: number): LatLng {
+  for (let i = 1; i < shape.length; i++) {
+    if (m <= cum[i]) {
+      const span = cum[i] - cum[i - 1];
+      const t = span > 0 ? (m - cum[i - 1]) / span : 0;
+      return [shape[i - 1][0] + (shape[i][0] - shape[i - 1][0]) * t, shape[i - 1][1] + (shape[i][1] - shape[i - 1][1]) * t];
+    }
+  }
+  return shape[shape.length - 1];
+}
+
+/**
+ * The part of a variant between two stops, cut at the exact stop positions.
+ * Rail lines have few shape points between stations, so picking existing points only is not enough.
+ */
 export function shapeFrom(variant: RouteVariant, stopIndex: number, toStopIndex?: number): LatLng[] {
-  const startM = stopIndex <= 0 ? 0 : variant.stopDistancesM[stopIndex];
-  const endM = toStopIndex === undefined ? Infinity : variant.stopDistancesM[toStopIndex];
-  const pts = variant.shape.filter((_, i) => variant.shapeCumM[i] >= startM - 0.5 && variant.shapeCumM[i] <= endM + 0.5);
-  return pts.length >= 2 ? pts : variant.shape;
+  const { shape, shapeCumM: cum } = variant;
+  if (shape.length < 2) return shape;
+  const total = cum[cum.length - 1];
+  const startM = stopIndex <= 0 ? 0 : variant.stopDistancesM[stopIndex] ?? 0;
+  const endM = toStopIndex === undefined ? total : variant.stopDistancesM[toStopIndex] ?? total;
+  const out: LatLng[] = [pointAtM(shape, cum, startM)];
+  for (let i = 0; i < shape.length; i++) if (cum[i] > startM && cum[i] < endM) out.push(shape[i]);
+  out.push(pointAtM(shape, cum, Math.max(startM, endM)));
+  return out;
 }
 
 export function directionArrows(points: LatLng[]): { position: LatLng; bearing: number }[] {
@@ -73,16 +93,21 @@ export interface RankedStop {
   routes: number; // how many different routes stop here
 }
 
-/** Busiest stops first, so zoomed-out maps keep the main interchanges. */
+/** Busiest stops first, so zoomed-out maps keep the main interchanges and rail stations. */
 export function rankedStops(net: TransitNetwork): RankedStop[] {
   return net.stops
     .map((stop) => {
       const routeIds = new Set<string>();
+      let rail = false;
       for (const id of net.variantIdsByStop[stop.id] ?? []) {
         const v = net.variantById[id];
-        if (v) routeIds.add(v.routeId);
+        if (!v) continue;
+        routeIds.add(v.routeId);
+        const mode = net.routeById[v.routeId]?.mode;
+        if (mode && mode !== 'bus') rail = true;
       }
-      return { stop, routes: routeIds.size };
+      // Rail stations count as major interchanges so they stay visible when zoomed out.
+      return { stop, routes: routeIds.size + (rail ? 10 : 0) };
     })
     .sort((a, b) => b.routes - a.routes);
 }

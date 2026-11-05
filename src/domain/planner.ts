@@ -28,6 +28,13 @@ export interface WalkSegment {
   walkMin: number;
 }
 
+/** Walk between two nearby stops when changing, e.g. bus stop -> BTS station. */
+export interface TransferWalk {
+  fromStopId: string;
+  distanceM: number;
+  walkMin: number;
+}
+
 export interface ItineraryLeg {
   boardStopId: string;
   alightStopId: string;
@@ -35,6 +42,7 @@ export interface ItineraryLeg {
   chosen: LegOption;
   avoidVariantIds: string[]; // same route + direction, but does not reach the alighting stop
   divergence: { stopId: string; beforeAlight: boolean } | null;
+  transferWalk: TransferWalk | null; // walk before boarding this leg (transfers only)
   source: 'live' | 'schedule';
   vehicleId: string | null;
   quality: DataQuality | null;
@@ -48,6 +56,7 @@ export interface ItineraryLeg {
   stopsCount: number;
   crowd: CrowdLevel;
   fare: [number, number];
+  fareKnown: boolean; // false = no fare data for this ride
   crossesDisruption: boolean;
 }
 
@@ -65,6 +74,7 @@ export interface Itinerary {
   crowd: CrowdLevel;
   crowdRank: number;
   fare: [number, number];
+  fareKnown: boolean; // false = at least one leg has no fare data
   usesSchedule: boolean;
   affectedByDisruption: boolean;
   catchFeasibility: WalkFeasibility;
@@ -87,12 +97,19 @@ const TRANSFER_BUFFER_SEC = 120;
 const TIGHT_TRANSFER_SEC = 240;
 const PLAN_HORIZON_MIN = 120;
 const WALK_ONLY_MAX_M = 1500;
+/** Walk to a different stop or station when changing, up to this distance. */
+const TRANSFER_WALK_M = 400;
+const TRANSFER_WALK_LIMIT = 6;
+/** Keep only the most promising transfer patterns so planning stays fast on phones. */
+const MAX_TRANSFER_PATTERNS = 80;
+const MIN_PER_STOP = 1.5; // rough ranking only
 const CROWD_ORDER: CrowdLevel[] = ['seats', 'standing', 'unknown', 'crowded'];
 
 interface LegPattern {
   boardStopId: string;
   alightStopId: string;
   options: LegOption[];
+  transferWalk: TransferWalk | null;
 }
 
 interface Pattern {
@@ -137,8 +154,41 @@ function legOptions(net: TransitNetwork, fromStopId: string, toStopId: string): 
   return out;
 }
 
+/** Stops from which at least one variant reaches `targetId` later in its trip. */
+function stopsReaching(net: TransitNetwork, targetId: string): Set<string> {
+  const out = new Set<string>();
+  for (const id of net.variantIdsByStop[targetId] ?? []) {
+    const v = net.variantById[id];
+    if (!v) continue;
+    const last = v.stopIds.lastIndexOf(targetId);
+    for (let i = 0; i < last; i++) out.add(v.stopIds[i]);
+  }
+  return out;
+}
+
+const rideStops = (options: LegOption[]) => Math.min(...options.map((o) => o.alightIndex - o.boardIndex));
+
 function buildPatterns(net: TransitNetwork, access: NearbyStop[], egress: NearbyStop[]): Pattern[] {
-  const patterns = new Map<string, Pattern>();
+  const direct = new Map<string, Pattern>();
+  const transfers = new Map<string, { pattern: Pattern; score: number }>();
+  const reaching = new Map(egress.map((e) => [e.stop.id, stopsReaching(net, e.stop.id)] as const));
+
+  // Where you can board after getting off at `stopId`: the same stop, or a stop/station within walking distance.
+  const walkCache = new Map<string, NearbyStop[]>();
+  const transferPoints = (stopId: string): NearbyStop[] => {
+    const hit = walkCache.get(stopId);
+    if (hit) return hit;
+    const stop = net.stopById[stopId];
+    const list: NearbyStop[] = stop
+      ? [
+          { stop, distanceM: 0, walkMin: 0 },
+          ...nearbyStops(net, stop.position, TRANSFER_WALK_M, TRANSFER_WALK_LIMIT).filter((n) => n.stop.id !== stopId),
+        ]
+      : [];
+    walkCache.set(stopId, list);
+    return list;
+  };
+
   for (const a of access) {
     // Direct rides
     for (const e of egress) {
@@ -146,35 +196,60 @@ function buildPatterns(net: TransitNetwork, access: NearbyStop[], egress: Nearby
       const options = legOptions(net, a.stop.id, e.stop.id);
       if (options.length === 0) continue;
       const id = `d:${a.stop.id}:${e.stop.id}`;
-      patterns.set(id, { id, access: a, egress: e, legs: [{ boardStopId: a.stop.id, alightStopId: e.stop.id, options }] });
+      direct.set(id, {
+        id, access: a, egress: e,
+        legs: [{ boardStopId: a.stop.id, alightStopId: e.stop.id, options, transferWalk: null }],
+      });
     }
-    // One transfer at the same stop
-    const transferStops = new Set<string>();
+
+    // One transfer, at the same stop or after a short walk
+    const alightStops = new Set<string>();
     for (const v of boardableVariants(net, a.stop.id)) {
-      v.stopIds.slice(v.stopIds.indexOf(a.stop.id) + 1).forEach((id) => transferStops.add(id));
+      v.stopIds.slice(v.stopIds.indexOf(a.stop.id) + 1).forEach((id) => alightStops.add(id));
     }
-    for (const t of transferStops) {
+    for (const t of alightStops) {
       const first = legOptions(net, a.stop.id, t);
       if (first.length === 0) continue;
       const firstRoutes = new Set(first.map((o) => net.variantById[o.variantId].routeId));
       for (const e of egress) {
-        if (e.stop.id === t || e.stop.id === a.stop.id) continue;
-        // If a first-leg bus already reaches the destination stop, the transfer is pointless.
-        if (first.some((o) => net.variantById[o.variantId].stopIds.indexOf(e.stop.id) > o.boardIndex)) continue;
-        const second = legOptions(net, t, e.stop.id).filter((o) => !firstRoutes.has(net.variantById[o.variantId].routeId));
-        if (second.length === 0) continue;
-        const id = `t:${a.stop.id}:${t}:${e.stop.id}`;
-        patterns.set(id, {
-          id, access: a, egress: e,
-          legs: [
-            { boardStopId: a.stop.id, alightStopId: t, options: first },
-            { boardStopId: t, alightStopId: e.stop.id, options: second },
-          ],
-        });
+        if (e.stop.id === a.stop.id) continue;
+        // If a first-leg vehicle already reaches the destination stop, the transfer is pointless.
+        if (first.some((o) => net.variantById[o.variantId].stopIds.indexOf(e.stop.id, o.boardIndex + 1) !== -1)) continue;
+        const canReach = reaching.get(e.stop.id) ?? new Set<string>();
+        for (const w of transferPoints(t)) {
+          if (w.stop.id === e.stop.id || w.stop.id === a.stop.id || !canReach.has(w.stop.id)) continue;
+          const second = legOptions(net, w.stop.id, e.stop.id).filter(
+            (o) => !firstRoutes.has(net.variantById[o.variantId].routeId),
+          );
+          if (second.length === 0) continue;
+          const id = `t:${a.stop.id}:${t}:${w.stop.id}:${e.stop.id}`;
+          const score =
+            a.walkMin + e.walkMin + w.walkMin * 1.5 + (rideStops(first) + rideStops(second)) * MIN_PER_STOP;
+          transfers.set(id, {
+            score,
+            pattern: {
+              id, access: a, egress: e,
+              legs: [
+                { boardStopId: a.stop.id, alightStopId: t, options: first, transferWalk: null },
+                {
+                  boardStopId: w.stop.id,
+                  alightStopId: e.stop.id,
+                  options: second,
+                  transferWalk: w.distanceM > 0 ? { fromStopId: t, distanceM: w.distanceM, walkMin: w.walkMin } : null,
+                },
+              ],
+            },
+          });
+        }
       }
     }
   }
-  return [...patterns.values()];
+
+  const bestTransfers = [...transfers.values()]
+    .sort((x, y) => x.score - y.score)
+    .slice(0, MAX_TRANSFER_PATTERNS)
+    .map((x) => x.pattern);
+  return [...direct.values(), ...bestTransfers];
 }
 
 function variantsToAvoid(net: TransitNetwork, lp: LegPattern): string[] {
@@ -211,7 +286,8 @@ function evaluate(ctx: Ctx, pattern: Pattern, mode: Itinerary['mode']): Itinerar
 
   for (const lp of pattern.legs) {
     if (lp.options.length === 0) return null; // no route serves this ride; skip the whole itinerary
-    const ready = clock + (legs.length > 0 ? TRANSFER_BUFFER_SEC : 0);
+    const walkSec = (lp.transferWalk?.walkMin ?? 0) * 60;
+    const ready = clock + walkSec + (legs.length > 0 ? TRANSFER_BUFFER_SEC : 0);
     const ids = new Set(lp.options.map((o) => o.variantId));
     const pool = ctx.arrivalsAt(lp.boardStopId).filter(
       (a) => ids.has(a.variantId) && a.etaSec !== null && !a.mayHavePassed && a.etaSec >= ready,
@@ -228,6 +304,7 @@ function evaluate(ctx: Ctx, pattern: Pattern, mode: Itinerary['mode']): Itinerar
       options: lp.options,
       avoidVariantIds: variantsToAvoid(net, lp),
       divergence: divergence(net, lp),
+      transferWalk: lp.transferWalk,
     };
 
     if (pick && pickEta !== null) {
@@ -241,7 +318,8 @@ function evaluate(ctx: Ctx, pattern: Pattern, mode: Itinerary['mode']): Itinerar
         : scheduledRideSec(route, variant, chosen.boardIndex, chosen.alightIndex, disruption);
       const waitSec = pickEta - ready;
       const crosses = rideCrossesDisruption(variant, chosen.boardIndex, chosen.alightIndex, disruption);
-      const fare = fareForStops(route, chosen.alightIndex - chosen.boardIndex);
+      const fareKnown = route.fareKnown !== false;
+      const fare = fareKnown ? fareForStops(route, chosen.alightIndex - chosen.boardIndex) : 0;
       slackLow += 0.1 * (rideSec + waitSec) + 30;
       slackHigh += 0.2 * (rideSec + waitSec) + 60 + (pick.quality === 'delayed' ? pick.staleSec : 0) + (crosses ? 300 : 0);
       legs.push({
@@ -260,6 +338,7 @@ function evaluate(ctx: Ctx, pattern: Pattern, mode: Itinerary['mode']): Itinerar
         stopsCount: chosen.alightIndex - chosen.boardIndex,
         crowd: pick.crowd,
         fare: [fare, fare],
+        fareKnown,
         crossesDisruption: crosses,
       });
       clock = pickEta + rideSec;
@@ -275,9 +354,11 @@ function evaluate(ctx: Ctx, pattern: Pattern, mode: Itinerary['mode']): Itinerar
       const crosses = lp.options.some((o) =>
         rideCrossesDisruption(net.variantById[o.variantId], o.boardIndex, o.alightIndex, disruption),
       );
-      const fares = lp.options.map((o) =>
-        fareForStops(net.routeById[net.variantById[o.variantId].routeId], o.alightIndex - o.boardIndex),
-      );
+      const fares: number[] = [];
+      for (const o of lp.options) {
+        const r = net.routeById[net.variantById[o.variantId].routeId];
+        if (r.fareKnown !== false) fares.push(fareForStops(r, o.alightIndex - o.boardIndex));
+      }
       slackLow += waitSec + 0.1 * rideSec;
       slackHigh += waitSec + 0.25 * rideSec + 60 + (crosses ? 300 : 0);
       legs.push({
@@ -295,7 +376,8 @@ function evaluate(ctx: Ctx, pattern: Pattern, mode: Itinerary['mode']): Itinerar
         alightAtSec: ready + waitSec + rideSec,
         stopsCount: chosen.alightIndex - chosen.boardIndex,
         crowd: 'unknown',
-        fare: [Math.min(...fares), Math.max(...fares)],
+        fare: fares.length > 0 ? [Math.min(...fares), Math.max(...fares)] : [0, 0],
+        fareKnown: fares.length > 0,
         crossesDisruption: crosses,
       });
       clock = ready + waitSec + rideSec;
@@ -309,6 +391,7 @@ function evaluate(ctx: Ctx, pattern: Pattern, mode: Itinerary['mode']): Itinerar
   const maxMin = Math.max(minMin + 2, Math.ceil((totalSec + slackHigh) / 60));
   const crowdRank = Math.max(...legs.map((l) => CROWD_ORDER.indexOf(l.crowd)));
   const firstLeg = legs[0];
+  const transferWalkM = legs.reduce((s, l) => s + (l.transferWalk?.distanceM ?? 0), 0);
 
   return {
     id: `${pattern.id}|${mode}`,
@@ -320,14 +403,20 @@ function evaluate(ctx: Ctx, pattern: Pattern, mode: Itinerary['mode']): Itinerar
     totalSec,
     range: { minMin, maxMin, arriving: false },
     transfers: legs.length - 1,
-    walkM: pattern.access.distanceM + pattern.egress.distanceM,
+    walkM: pattern.access.distanceM + pattern.egress.distanceM + transferWalkM,
     crowd: CROWD_ORDER[crowdRank],
     crowdRank,
     fare: [legs.reduce((s, l) => s + l.fare[0], 0), legs.reduce((s, l) => s + l.fare[1], 0)],
+    fareKnown: legs.every((l) => l.fareKnown),
     usesSchedule: legs.some((l) => l.source === 'schedule'),
     affectedByDisruption: legs.some((l) => l.crossesDisruption),
     catchFeasibility: firstLeg.source === 'live' ? walkFeasibility(pattern.access.walkMin, firstLeg.vehicleEta) : 'unknown',
-    tightTransfer: legs.some((l, i) => i > 0 && l.source === 'live' && l.boardAtSec - legs[i - 1].alightAtSec < TIGHT_TRANSFER_SEC),
+    tightTransfer: legs.some(
+      (l, i) =>
+        i > 0 &&
+        l.source === 'live' &&
+        l.boardAtSec - legs[i - 1].alightAtSec - (l.transferWalk?.walkMin ?? 0) * 60 < TIGHT_TRANSFER_SEC,
+    ),
     comfortExtraMin: null,
   };
 }
@@ -408,9 +497,13 @@ export function planTrip(net: TransitNetwork, snapshot: LiveSnapshot, from: Plan
   return {
     computedAtMs: snapshot.generatedAtMs,
     itineraries: prune(candidates),
-    walkOnly: directDistanceM <= WALK_ONLY_MAX_M ? { distanceM: directDistanceM, walkMin: walkingMinutes(directDistanceM) } : null,
+    walkOnly: directWalkOnly(directDistanceM),
     directDistanceM,
     accessCount: access.length,
     egressCount: egress.length,
   };
+}
+
+function directWalkOnly(distanceM: number): PlanResult['walkOnly'] {
+  return distanceM <= WALK_ONLY_MAX_M ? { distanceM, walkMin: walkingMinutes(distanceM) } : null;
 }

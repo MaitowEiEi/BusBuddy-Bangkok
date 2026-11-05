@@ -42,3 +42,33 @@ export function useGeolocation() {
 
   return { status, request };
 }
+
+/** Follows the position while `enabled` is true. Stops (and saves battery) as soon as it is false. */
+export function useWatchPosition(enabled: boolean) {
+  const [fix, setFix] = useState<GeoFix | null>(null);
+  const [status, setStatus] = useState<GeoStatus>('idle');
+
+  useEffect(() => {
+    if (!enabled) {
+      setFix(null);
+      setStatus('idle');
+      return;
+    }
+    if (!('geolocation' in navigator) || !window.isSecureContext) {
+      setStatus('unsupported');
+      return;
+    }
+    setStatus('requesting');
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setStatus('granted');
+        setFix({ position: [pos.coords.latitude, pos.coords.longitude], accuracyM: Math.round(pos.coords.accuracy) });
+      },
+      (err) => setStatus(err.code === err.PERMISSION_DENIED ? 'denied' : err.code === err.TIMEOUT ? 'timeout' : 'unavailable'),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 20000 },
+    );
+    return () => navigator.geolocation.clearWatch(id);
+  }, [enabled]);
+
+  return { fix, status };
+}

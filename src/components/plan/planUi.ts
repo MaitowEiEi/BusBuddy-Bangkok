@@ -2,6 +2,7 @@ import { Footprints, Shuffle, Users, Zap, type LucideIcon } from 'lucide-react';
 import type { ItineraryLeg, PlanCriterion, PlanPoint } from '../../domain/planner';
 import type { Route, TransitNetwork } from '../../types/transit';
 import type { Origin } from '../../types/ui';
+import { stopLabel } from '../../domain/lookup';
 
 export const CRITERION_META: Record<PlanCriterion, { label: string; tag: string; Icon: LucideIcon }> = {
   fastest: { label: 'ถึงเร็วที่สุด', tag: 'เร็วที่สุด', Icon: Zap },
@@ -27,7 +28,7 @@ export function resolveEndpoint(net: TransitNetwork, origin: Origin | null, valu
   const [kind, id] = value.split(':');
   if (kind === 'stop' && net.stopById[id]) {
     const s = net.stopById[id];
-    return { point: { position: s.position, stopId: s.id }, labelTh: `ป้าย${s.nameTh}` };
+    return { point: { position: s.position, stopId: s.id }, labelTh: stopLabel(net, s) };
   }
   if (kind === 'place' && net.placeById[id]) {
     const p = net.placeById[id];

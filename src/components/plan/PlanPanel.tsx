@@ -91,9 +91,20 @@ export function PlanPanel({ toStopId, toPlaceId }: { toStopId?: string; toPlaceI
 
   const quickPlaces = QUICK_PLACES.flatMap((id) => (network.placeById[id] ? [network.placeById[id]] : []));
 
+  // Pick the busiest real stops by name, so the example works with both demo and Namtang data.
+  const example = useMemo(() => {
+    const busiest = (name: string) =>
+      network.stops
+        .filter((s) => s.nameTh.includes(name))
+        .sort((a, b) => (network.variantIdsByStop[b.id]?.length ?? 0) - (network.variantIdsByStop[a.id]?.length ?? 0))[0];
+    const a = busiest('อนุสาวรีย์ชัย');
+    const b = busiest('สยาม');
+    return a && b ? { from: a.id, to: b.id } : null;
+  }, [network]);
+
   return (
     <div className="space-y-5 pb-8">
-      <PanelHeader title="วางแผนการเดินทาง" subtitle="เปรียบเทียบทางเลือกจากข้อมูลรถจำลองล่าสุด" />
+      <PanelHeader title="วางแผนการเดินทาง" subtitle="เปรียบเทียบรถเมล์และรถไฟฟ้า · ตำแหน่งรถเป็นข้อมูลจำลอง"/>
 
       <div className="space-y-1 px-4">
         <EndpointSelect label="จาก" value={fromValue} onChange={(v) => { setFromValue(v); setSelectedId(null); }} />
@@ -123,16 +134,18 @@ export function PlanPanel({ toStopId, toPlaceId }: { toStopId?: string; toPlaceI
               </button>
             ))}
           </div>
-          <div className="px-4">
-            <button
-              type="button"
-              onClick={() => { setFromValue('stop:S01'); setToValue('stop:S04'); setSelectedId(null); }}
-              className={btn.ghost}
-            >
-              <Lightbulb aria-hidden className="h-4 w-4" />
-              ลองตัวอย่าง: อนุสาวรีย์ชัยฯ → สยาม
-            </button>
-          </div>
+          {example && (
+            <div className="px-4">
+              <button
+                type="button"
+                onClick={() => { setFromValue(`stop:${example.from}`); setToValue(`stop:${example.to}`); setSelectedId(null); }}
+                className={btn.ghost}
+              >
+                <Lightbulb aria-hidden className="h-4 w-4" />
+                ลองตัวอย่าง: อนุสาวรีย์ชัยฯ → สยาม
+              </button>
+            </div>
+          )}
         </Section>
       )}
 
@@ -215,7 +228,7 @@ export function PlanPanel({ toStopId, toPlaceId }: { toStopId?: string; toPlaceI
                   </div>
                 ) : sorted.length === 0 ? (
                   <p className="px-4 text-sm text-ink-soft">
-                    ไม่พบเส้นทางรถเมล์ในข้อมูลจำลองที่ไปถึงได้โดยเปลี่ยนรถไม่เกิน 1 ครั้ง
+                    ไม่พบเส้นทางที่ไปถึงได้โดยเปลี่ยนรถไม่เกิน 1 ครั้ง ลองเลือกป้ายหรือสถานีที่ใกล้ปลายทางกว่านี้
                   </p>
                 ) : (
                   <>
@@ -245,8 +258,8 @@ export function PlanPanel({ toStopId, toPlaceId }: { toStopId?: string; toPlaceI
           </Section>
 
           <p className="mx-4 rounded-xl bg-slate-50 p-3 text-xs text-ink-soft ring-1 ring-slate-200">
-            เวลาเป็นช่วงประมาณการจากตำแหน่งรถจำลองและตารางเดินรถ คิดเวลาเผื่อเปลี่ยนรถ 2 นาที รองรับการเปลี่ยนรถไม่เกิน 1 ครั้งที่ป้ายเดียวกัน
-            ค่าโดยสารรวมคิดแยกแต่ละคัน (ต้นแบบไม่มีส่วนลดเปลี่ยนสาย)
+            เวลาเป็นช่วงประมาณการจากตำแหน่งรถจำลองและตารางเดินรถ เผื่อเวลาเปลี่ยนรถ 2 นาที เปลี่ยนรถได้ไม่เกิน 1 ครั้ง
+            และเดินไปต่อรถที่ป้ายหรือสถานีใกล้ ๆ ได้ไม่เกิน 400 ม. ค่าโดยสารรวมคิดแยกแต่ละช่วง (ไม่รวมส่วนลดเปลี่ยนสาย)
           </p>
         </>
       )}

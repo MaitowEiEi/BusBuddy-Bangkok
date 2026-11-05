@@ -57,3 +57,10 @@ export function formatAgo(nowMs: number, thenMs: number): string {
   if (m < 60) return `${m} นาทีที่แล้ว`;
   return `${Math.floor(m / 60)} ชม. ที่แล้ว`;
 }
+
+/** Total fare for an itinerary. Rides without fare data count as 0, so say so instead of showing a too-low total. */
+export function formatFareEstimate(fare: [number, number], known: boolean): string {
+  if (known) return `~${formatFareRange(fare)}`;
+  if (fare[1] > 0) return `${fare[0]} บาทขึ้นไป (บางช่วงไม่มีข้อมูลราคา)`;
+  return 'ไม่มีข้อมูลค่าโดยสาร';
+}

@@ -27,3 +27,22 @@ export function showSystemNotification(title: string, body: string, tag: string)
     return false;
   }
 }
+
+/** Reads a message aloud in Thai, if the device supports speech. */
+export function speak(text: string): void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'th-TH';
+  const thai = window.speechSynthesis.getVoices().find((v) => v.lang.startsWith('th'));
+  if (thai) u.voice = thai;
+  window.speechSynthesis.speak(u);
+}
+
+/** iOS only allows speech after a tap; call this inside a click handler. */
+export function unlockSpeech(): void {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  const u = new SpeechSynthesisUtterance(' ');
+  u.volume = 0;
+  window.speechSynthesis.speak(u);
+}

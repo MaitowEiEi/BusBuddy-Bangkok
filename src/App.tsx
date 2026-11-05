@@ -18,6 +18,7 @@ import { AppContext, type AppContextValue } from './state/AppContext';
 import type { ScenarioId, TransitNetwork } from './types/transit';
 import { viewKey, type Origin, type PanelView } from './types/ui';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
+import { AlightWatcher } from './components/alerts/AlightWatcher';
 
 const HOME: PanelView = { kind: 'home' };
 const MAX_HISTORY = 20;
@@ -97,6 +98,7 @@ function AppShell({ network }: { network: TransitNetwork }) {
 
   return (
     <AppContext.Provider value={value}>
+      <AlightWatcher />
       <a
         href="#bb-panel"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[1500] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:shadow-lg"

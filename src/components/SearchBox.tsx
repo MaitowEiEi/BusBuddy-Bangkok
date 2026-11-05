@@ -1,4 +1,4 @@
-import { Bus, MapPin, Search, Signpost, X } from 'lucide-react';
+import { Bus, MapPin, Search, Signpost, TrainFront, X } from 'lucide-react';
 import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { searchNetwork, type SearchResult } from '../domain/search';
 import { useApp } from '../state/AppContext';
@@ -19,6 +19,14 @@ export function SearchBox() {
   const listId = useId();
 
   const results = useMemo(() => searchNetwork(network, query), [network, query]);
+  const example = useMemo(() => {
+    const r = network.routes.find((x) => x.legacyName && x.mode === 'bus') ?? network.routes[0];
+    return {
+      short: r?.shortName ?? '',
+      hint: r?.legacyName ? `${r.shortName} หรือเลขเดิม ${r.legacyName}` : r?.shortName ?? '',
+    };
+  }, [network]);
+
   const trimmed = query.trim();
   const showPanel = open && trimmed.length > 0;
 
@@ -65,7 +73,7 @@ export function SearchBox() {
         onFocus={() => setOpen(true)}
         onBlur={() => setOpen(false)}
         onKeyDown={onKeyDown}
-        placeholder="ค้นหาสาย (เช่น D21) ป้าย หรือสถานที่"
+        placeholder={`ค้นหาสาย (เช่น ${example.short}) ป้าย หรือสถานที่`}
         autoComplete="off"
         className="h-12 w-full rounded-2xl bg-slate-100 pl-10 pr-11 text-base placeholder:text-ink-muted focus:bg-white"
       />
@@ -86,12 +94,14 @@ export function SearchBox() {
             <p role="status" className="p-4 text-sm text-ink-soft">
               ไม่พบผลลัพธ์สำหรับ “{trimmed}”
               <br />
-              ลองพิมพ์ชื่อป้าย รหัสสาย (เช่น D10) หรือสถานที่ เช่น สยาม จุฬา อารีย์
+              ลองพิมพ์ชื่อป้าย เลขสาย (เช่น {example.hint}) หรือสถานที่ เช่น สยาม จุฬา อารีย์
             </p>
           ) : (
             <ul id={listId} role="listbox" aria-label="ผลการค้นหา">
               {results.map((r, i) => {
-                const { Icon, label } = KIND_META[r.kind];
+                const rail = r.kind !== 'place' && r.rail;
+                const Icon = rail ? TrainFront : KIND_META[r.kind].Icon;
+                const label = rail ? (r.kind === 'route' ? 'รถไฟฟ้า' : 'สถานี') : KIND_META[r.kind].label;
                 return (
                   <li
                     key={`${r.kind}:${r.id}`}
