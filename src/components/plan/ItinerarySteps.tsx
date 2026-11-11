@@ -14,6 +14,7 @@ import { Banner } from '../ui/Banner';
 import { btn } from '../ui/buttonStyles';
 import { placeLabel as placeName } from '../../domain/lookup';
 import { AlightAlarmToggle } from '../alerts/AlightAlarmToggle';
+import { ConductorCard } from './ConductorCard';
 
 const CATCH: Record<'ok' | 'tight' | 'miss', { text: string; cls: string; Icon: LucideIcon }> = {
   ok: { text: 'เดินไปทันคันนี้ (ประมาณการ)', cls: 'text-emerald-800', Icon: CheckCircle2 },
@@ -195,8 +196,12 @@ function LegSteps({ itinerary: it, leg, index }: { itinerary: Itinerary; leg: It
           {leg.fareKnown ? `ค่าโดยสาร ~${formatFareRange(leg.fare)}` : 'ไม่มีข้อมูลค่าโดยสาร'}
         </p>
         {!rail && (
-          <AlightAlarmToggle variantId={variant.id} boardIndex={leg.chosen.boardIndex} alightIndex={leg.chosen.alightIndex} />
+          <div className="flex flex-wrap items-start gap-2">
+            <AlightAlarmToggle variantId={variant.id} boardIndex={leg.chosen.boardIndex} alightIndex={leg.chosen.alightIndex} />
+            <ConductorCard routeShortName={route.shortName} stopName={alight.nameTh} fare={leg.fareKnown ? leg.fare : null} />
+          </div>
         )}
+
         {leg.crossesDisruption && (
           <Banner tone="disruption" title="ช่วงนี้มีเหตุขัดข้อง">
             {snapshot?.disruption?.titleTh ?? 'อาจใช้เวลานานกว่าปกติ'} · เวลาที่แสดงรวมความล่าช้าโดยประมาณแล้ว

@@ -11,6 +11,7 @@ export interface PlanPreview {
   key: string; // changes whenever anything drawn changes
   fitKey: string; // changes only when the map should re-fit
   legs: PreviewLeg[];
+  walks: LatLng[][]; // straight walking lines: to the first stop, between transfers, to the destination
   fitPoints: LatLng[];
   destination: { position: LatLng; labelTh: string } | null;
   boardStopId: string | null;

@@ -6,6 +6,7 @@ import type { Origin } from '../../types/ui';
 import {
   baseVariants, directionArrows, pickStops, rankedStops, shapeFrom, vehicleLabel, type MapScene, type MapTarget,
 } from './mapModel';
+import { activeProvider } from '../../services/activeProvider';
 
 interface Props {
   network: TransitNetwork;
@@ -50,6 +51,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
   const ranked = useMemo(() => rankedStops(network), [network]);
 
   const highlightKey = scene.highlights.map((h) => `${h.variantId}@${h.fromStopIndex}-${h.toStopIndex ?? 'end'}`).join('|');
+  const walkKey = scene.walks.map((w) => w.map((p) => p.join(',')).join(';')).join('|');
   const { selectedStopId, selectedVehicleId, place, focused } = scene;
   const zoomedOut = (viewport?.zoom ?? 14) < 14;
 
@@ -59,7 +61,12 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     if (!el) return;
     const map = L.map(el, { center: [13.758, 100.54], zoom: 14, zoomControl: false, attributionControl: false });
     L.control.zoom({ position: 'topleft', zoomInTitle: 'ขยายแผนที่', zoomOutTitle: 'ย่อแผนที่' }).addTo(map);
-    L.control.attribution({ position: 'topright', prefix: false }).addTo(map);
+    const attribution = L.control.attribution({ position: 'topright', prefix: false }).addTo(map);
+    if (activeProvider.id !== 'mock') {
+      attribution.addAttribution(
+        'ข้อมูลเส้นทาง &copy; <a href="[otp](https://namtang-api.otp.go.th/opendata)" target="_blank" rel="noreferrer">สนข.</a> (CC BY 4.0)',
+      );
+    }
 
     const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -142,7 +149,11 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
         L.marker(a.position, { icon: arrowIcon(route.color, a.bearing), interactive: false, keyboard: false, zIndexOffset: -500 }).addTo(g);
       }
     }
-  }, [network, highlightKey, focused, zoomedOut]);
+    for (const w of sceneRef.current.walks) {
+      L.polyline(w, { color: '#334155', weight: 4, opacity: 0.9, dashArray: '1 9', lineCap: 'round', interactive: false }).addTo(g);
+    }
+  }, [network, highlightKey, walkKey, focused, zoomedOut]);
+
 
   // Stops: main interchanges when zoomed out, every stop when zoomed in, only related stops when focused.
   useEffect(() => {

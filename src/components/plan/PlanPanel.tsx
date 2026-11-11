@@ -4,7 +4,7 @@ import { PLAN_CRITERIA, bestByCriterion, planTrip, sortItineraries, type PlanCri
 import { formatDistance } from '../../lib/format';
 import { useApp } from '../../state/AppContext';
 import { setPlanPreview } from '../../state/planPreview';
-import type { DataQuality } from '../../types/transit';
+import type { DataQuality, LatLng } from '../../types/transit'; 
 import { LiveStatus } from '../LiveStatus';
 import { NoticeList } from '../NoticeList';
 import { PanelHeader } from '../panel/PanelHeader';
@@ -70,11 +70,25 @@ export function PlanPanel({ toStopId, toPlaceId }: { toStopId?: string; toPlaceI
       network.stopById[l.boardStopId].position,
       network.stopById[l.alightStopId].position,
     ]);
+    const walks: LatLng[][] = [];
+    if (active) {
+      const pos = (id: string) => network.stopById[id]?.position;
+      const first = pos(active.access.stopId);
+      if (first && active.access.distanceM > 0) walks.push([from.point.position, first]);
+      for (const l of active.legs) {
+        const a = l.transferWalk ? pos(l.transferWalk.fromStopId) : undefined;
+        const b = pos(l.boardStopId);
+        if (a && b) walks.push([a, b]);
+      }
+      const last = pos(active.egress.stopId);
+      if (last && active.egress.distanceM > 0) walks.push([last, to.point.position]);
+    }
     const base = `${from.point.position.join(',')}>${to.point.position.join(',')}|${active?.id ?? 'none'}`;
     setPlanPreview({
       key: `${base}|${legs.map((l) => l.variantId).join(',')}`,
       fitKey: base,
       legs,
+      walks,
       fitPoints: [from.point.position, ...stopPoints, to.point.position],
       destination: { position: to.point.position, labelTh: to.labelTh },
       boardStopId: active?.legs[0]?.boardStopId ?? null,

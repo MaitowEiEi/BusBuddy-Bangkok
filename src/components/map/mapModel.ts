@@ -15,6 +15,7 @@ export interface Highlight {
 }
 
 export interface MapScene {
+  walks: LatLng[][];
   highlights: Highlight[];
   selectedStopId: string | null;
   selectedVehicleId: string | null;
@@ -25,7 +26,7 @@ export interface MapScene {
 }
 
 const EMPTY: MapScene = {
-  highlights: [], selectedStopId: null, selectedVehicleId: null, place: null, fitPoints: [], focused: false,
+  walks: [], highlights: [], selectedStopId: null, selectedVehicleId: null, place: null, fitPoints: [], focused: false,
 };
 const NEAR_ORIGIN_M = 2500;
 const MAX_STOPS_ON_MAP = 250;
@@ -209,6 +210,7 @@ export function buildScene(
       return {
         ...EMPTY,
         focused: true,
+        walks: preview.walks,
         highlights: preview.legs.map((l) => ({ variantId: l.variantId, fromStopIndex: l.fromStopIndex, toStopIndex: l.toStopIndex })),
         selectedStopId: preview.boardStopId,
         place: destination,

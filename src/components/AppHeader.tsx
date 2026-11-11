@@ -2,6 +2,7 @@ import { Bus, FlaskConical } from 'lucide-react';
 import { useApp } from '../state/AppContext';
 import { DemoControls } from './DemoControls';
 import { SearchBox } from './SearchBox';
+import { activeProvider } from '../services/activeProvider';
 
 export function AppHeader() {
   const { goHome } = useApp();
@@ -17,13 +18,23 @@ export function AppHeader() {
           </span>
         </button>
         <div className="ml-auto">
-          <DemoControls />
+          {activeProvider.id === 'mock' && <DemoControls />}
         </div>
       </div>
       <SearchBox />
       <p className="flex items-center gap-1.5 text-xs text-ink-muted">
         <FlaskConical aria-hidden className="h-3.5 w-3.5 shrink-0" />
-        โหมดต้นแบบ — ข้อมูลรถ เวลา และรางวัลเป็นข้อมูลจำลอง
+        {activeProvider.id === 'mock' ? (
+          'โหมดทดสอบ — ใช้ข้อมูลจำลองทั้งหมด'
+        ) : (
+          <span>
+            เส้นทางและตารางจาก{' '}
+            <a href="[otp](https://namtang-api.otp.go.th/opendata)" target="_blank" rel="noreferrer" className="underline">
+              สนข. (CC BY 4.0)
+            </a>{' '}
+            · ตำแหน่งรถเป็นข้อมูลจำลอง
+          </span>
+        )}
       </p>
     </header>
   );

@@ -34,7 +34,7 @@ function FullScreenMessage({ text, isError = false }: { text: string; isError?: 
 export default function App() {
   const { network, error } = useNetwork(activeProvider);
   if (error) return <FullScreenMessage text={error} isError />;
-  if (!network) return <FullScreenMessage text="กำลังโหลดข้อมูลเส้นทางจำลอง…" />;
+  if (!network) return <FullScreenMessage text="กำลังโหลดข้อมูลเส้นทาง…" />;
   return (
     <ToastProvider>
       <AppShell network={network} />
