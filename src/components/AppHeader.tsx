@@ -3,6 +3,7 @@ import { useApp } from '../state/AppContext';
 import { DemoControls } from './DemoControls';
 import { SearchBox } from './SearchBox';
 import { activeProvider } from '../services/activeProvider';
+import { InstallButton } from './InstallButton';
 
 export function AppHeader() {
   const { goHome } = useApp();
@@ -17,7 +18,8 @@ export function AppHeader() {
             BusBuddy <span className="font-medium text-brand-700">Bangkok</span>
           </span>
         </button>
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-2">
+          <InstallButton />
           {activeProvider.id === 'mock' && <DemoControls />}
         </div>
       </div>
@@ -29,7 +31,7 @@ export function AppHeader() {
         ) : (
           <span>
             เส้นทางและตารางจาก{' '}
-            <a href="[otp](https://namtang-api.otp.go.th/opendata)" target="_blank" rel="noreferrer" className="underline">
+            <a href="https://namtang-api.otp.go.th/opendata" target="_blank" rel="noreferrer" className="underline">
               สนข. (CC BY 4.0)
             </a>{' '}
             · ตำแหน่งรถเป็นข้อมูลจำลอง

@@ -64,7 +64,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     const attribution = L.control.attribution({ position: 'topright', prefix: false }).addTo(map);
     if (activeProvider.id !== 'mock') {
       attribution.addAttribution(
-        'ข้อมูลเส้นทาง &copy; <a href="[otp](https://namtang-api.otp.go.th/opendata)" target="_blank" rel="noreferrer">สนข.</a> (CC BY 4.0)',
+        'ข้อมูลเส้นทาง &copy; <a href="https://namtang-api.otp.go.th/opendata" target="_blank" rel="noreferrer">สนข.</a> (CC BY 4.0)',
       );
     }
 

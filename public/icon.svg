@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#047857"/>
+  <!-- body -->
+  <rect x="146" y="118" width="220" height="232" rx="40" fill="#ffffff"/>
+  <!-- destination sign -->
+  <rect x="190" y="138" width="132" height="24" rx="12" fill="#047857"/>
+  <!-- windshield background -->
+  <rect x="170" y="180" width="172" height="96" rx="16" fill="#047857"/>
+  <!-- Left eye (wink ;) -->
+  <path d="M 196 236 Q 216 216 236 236" fill="none" stroke="#fbbf24" stroke-width="10" stroke-linecap="round"/>
+  <!-- Right eye (dot) -->
+  <circle cx="296" cy="226" r="14" fill="#fbbf24"/>
+  <!-- smile -->
+  <path d="M 216 300 Q 256 330 296 300" fill="none" stroke="#047857" stroke-width="12" stroke-linecap="round"/>
+  <!-- wheels -->
+  <rect x="170" y="362" width="44" height="40" rx="12" fill="#ffffff"/>
+  <rect x="298" y="362" width="44" height="40" rx="12" fill="#ffffff"/>
+</svg>
