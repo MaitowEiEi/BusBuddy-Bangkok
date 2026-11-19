@@ -19,6 +19,7 @@ import type { ScenarioId, TransitNetwork } from './types/transit';
 import { viewKey, type Origin, type PanelView } from './types/ui';
 import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { AlightWatcher } from './components/alerts/AlightWatcher';
+import { useLang } from './lib/i18n';
 
 const HOME: PanelView = { kind: 'home' };
 const MAX_HISTORY = 20;
@@ -32,6 +33,7 @@ function FullScreenMessage({ text, isError = false }: { text: string; isError?: 
 }
 
 export default function App() {
+  useLang(); // re-render the whole app when the language changes
   const { network, error } = useNetwork(activeProvider);
   if (error) return <FullScreenMessage text={error} isError />;
   if (!network) return <FullScreenMessage text="กำลังโหลดข้อมูลเส้นทาง…" />;

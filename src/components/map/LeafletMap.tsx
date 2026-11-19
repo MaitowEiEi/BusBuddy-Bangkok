@@ -7,6 +7,8 @@ import {
   baseVariants, directionArrows, pickStops, rankedStops, shapeFrom, vehicleLabel, type MapScene, type MapTarget,
 } from './mapModel';
 import { activeProvider } from '../../services/activeProvider';
+import { pickName, useLang, useT } from '../../lib/i18n';
+import { stopLabel } from '../../domain/lookup';
 
 interface Props {
   network: TransitNetwork;
@@ -49,6 +51,8 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
 
   const [viewport, setViewport] = useState<Viewport | null>(null);
   const ranked = useMemo(() => rankedStops(network), [network]);
+  const lang = useLang();
+  const tr = useT();
 
   const highlightKey = scene.highlights.map((h) => `${h.variantId}@${h.fromStopIndex}-${h.toStopIndex ?? 'end'}`).join('|');
   const walkKey = scene.walks.map((w) => w.map((p) => p.join(',')).join(';')).join('|');
@@ -63,9 +67,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     L.control.zoom({ position: 'topleft', zoomInTitle: 'ขยายแผนที่', zoomOutTitle: 'ย่อแผนที่' }).addTo(map);
     const attribution = L.control.attribution({ position: 'topright', prefix: false }).addTo(map);
     if (activeProvider.id !== 'mock') {
-      attribution.addAttribution(
-        'ข้อมูลเส้นทาง &copy; <a href="https://namtang-api.otp.go.th/opendata" target="_blank" rel="noreferrer">สนข.</a> (CC BY 4.0)',
-      );
+      attribution.addAttribution('ทางเดิน <a href="https://routing.openstreetmap.de" target="_blank" rel="noreferrer">FOSSGIS</a>');
     }
 
     const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -182,6 +184,8 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     });
 
     for (const s of shown) {
+      const name = pickName(lang, s.nameTh, s.nameEn);
+      const aria = stopLabel(network, s, lang);
       const selected = s.id === selectedStopId;
       const m = L.marker(s.position, {
         icon: L.divIcon({
@@ -190,16 +194,16 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
           iconSize: [28, 28],
           iconAnchor: [14, 14],
         }),
-        title: `ป้าย${s.nameTh}`,
+        title: aria,
         keyboard: true,
         zIndexOffset: selected ? 500 : 0,
       });
       m.on('click', () => onSelectRef.current({ kind: 'stop', id: s.id }));
-      m.bindTooltip(s.nameTh, { direction: 'top', offset: [0, -12], permanent: selected });
+      m.bindTooltip(name, { direction: 'top', offset: [0, -12], permanent: selected });
       m.addTo(g);
-      m.getElement()?.setAttribute('aria-label', `ป้าย${s.nameTh}`);
+      m.getElement()?.setAttribute('aria-label', aria);
     }
-  }, [network, ranked, selectedStopId, highlightKey, focused, viewport]);
+  }, [network, ranked, selectedStopId, highlightKey, focused, viewport, lang]);
 
   // Vehicles: update existing markers in place so focus and selection survive refreshes
   useEffect(() => {
@@ -271,7 +275,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
         vehicleMarkers.current.delete(id);
       }
     }
-  }, [network, snapshot, selectedVehicleId, highlightKey, focused, viewport]);
+  }, [network, snapshot, selectedVehicleId, highlightKey, focused, viewport, lang]);
 
   // Origin + selected place
   useEffect(() => {
@@ -316,5 +320,5 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     return () => window.clearTimeout(id);
   }, [fitKey, insetRef]);
 
-  return <div ref={containerRef} className="bb-map h-full w-full" role="region" aria-label="แผนที่เส้นทางรถเมล์ (ข้อมูลรถจำลอง)" />;
+  return <div ref={containerRef} className="bb-map h-full w-full" role="region" aria-label={tr('แผนที่เส้นทางรถเมล์ (ข้อมูลรถจำลอง)', 'Bus map (simulated bus data)')} />;
 }

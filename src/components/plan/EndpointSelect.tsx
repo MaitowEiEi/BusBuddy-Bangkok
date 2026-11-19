@@ -3,6 +3,7 @@ import { useId, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { searchNetwork } from '../../domain/search';
 import { useApp } from '../../state/AppContext';
 import { resolveEndpoint } from './planUi';
+import { pickName, useLang, useT } from '../../lib/i18n';
 
 interface Option {
   value: string; // "origin" | "stop:<id>" | "place:<id>"
@@ -24,6 +25,8 @@ const MAX_RESULTS = 8;
 /** Type-to-search picker for stops, stations and places. */
 export function EndpointSelect({ label, value, onChange }: Props) {
   const { network, origin } = useApp();
+  const lang = useLang();
+  const tr = useT();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -31,39 +34,48 @@ export function EndpointSelect({ label, value, onChange }: Props) {
   const inputId = useId();
   const listId = useId();
 
-  const current = useMemo(() => resolveEndpoint(network, origin, value), [network, origin, value]);
+  const current = useMemo(() => resolveEndpoint(network, origin, value, lang), [network, origin, value, lang]);
   const q = query.trim();
 
   const options = useMemo<Option[]>(() => {
+    const en = lang === 'en';
     const out: Option[] = [];
-    if (origin && (!q || origin.labelTh.includes(q) || 'ตำแหน่งของฉัน'.includes(q))) {
+    const originLabel = resolveEndpoint(network, origin, 'origin', lang)?.labelTh;
+    const ql = q.toLowerCase();
+    if (origin && originLabel && (!q || originLabel.toLowerCase().includes(ql) || 'ตำแหน่งของฉัน'.includes(q) || 'my location'.includes(ql))) {
       out.push({
         value: 'origin',
-        titleTh: origin.labelTh,
-        subtitleTh: 'จุดเริ่มต้นที่ตั้งไว้ในหน้าหลัก',
-        kindTh: 'ตำแหน่ง',
+        titleTh: originLabel,
+        subtitleTh: en ? 'Start point set on the home screen' : 'จุดเริ่มต้นที่ตั้งไว้ในหน้าหลัก',
+        kindTh: en ? 'Location' : 'ตำแหน่ง',
         Icon: LocateFixed,
       });
     }
     if (!q) {
       for (const p of network.places.slice(0, SUGGESTED_PLACES)) {
-        out.push({ value: `place:${p.id}`, titleTh: p.nameTh, subtitleTh: p.categoryTh, kindTh: 'สถานที่', Icon: MapPin });
+        out.push({
+          value: `place:${p.id}`,
+          titleTh: pickName(lang, p.nameTh, p.nameEn),
+          subtitleTh: pickName(lang, p.categoryTh, p.categoryEn),
+          kindTh: en ? 'Place' : 'สถานที่',
+          Icon: MapPin,
+        });
       }
       return out;
     }
-    for (const r of searchNetwork(network, q, MAX_RESULTS, ['stop', 'place'])) {
+    for (const r of searchNetwork(network, q, { limit: MAX_RESULTS, kinds: ['stop', 'place'], lang })) {
       if (r.kind === 'route') continue;
       const rail = r.kind === 'stop' && r.rail;
       out.push({
         value: `${r.kind}:${r.id}`,
         titleTh: r.titleTh,
         subtitleTh: r.subtitleTh,
-        kindTh: r.kind === 'place' ? 'สถานที่' : rail ? 'สถานี' : 'ป้าย',
+        kindTh: r.kind === 'place' ? (en ? 'Place' : 'สถานที่') : rail ? (en ? 'Station' : 'สถานี') : en ? 'Stop' : 'ป้าย',
         Icon: r.kind === 'place' ? MapPin : rail ? TrainFront : Signpost,
       });
     }
     return out;
-  }, [network, origin, q]);
+  }, [network, origin, q, lang]);
 
   const choose = (o: Option) => {
     onChange(o.value);
@@ -106,7 +118,7 @@ export function EndpointSelect({ label, value, onChange }: Props) {
           aria-autocomplete="list"
           aria-activedescendant={open && options[active] ? `${listId}-${active}` : undefined}
           value={open ? query : current?.labelTh ?? ''}
-          placeholder={open && current ? current.labelTh : 'พิมพ์ชื่อป้าย สถานี หรือสถานที่'}
+          placeholder={open && current ? current.labelTh : tr('พิมพ์ชื่อป้าย สถานี หรือสถานที่', 'Type a stop, station or place')}
           onChange={(e) => { setQuery(e.target.value); setActive(0); }}
           onFocus={() => {
             setOpen(true);
@@ -123,7 +135,7 @@ export function EndpointSelect({ label, value, onChange }: Props) {
         {showClear && (
           <button
             type="button"
-            aria-label={open ? 'ล้างคำค้นหา' : `ล้างช่อง${label}`}
+            aria-label={open ? tr('ล้างคำค้นหา', 'Clear search') : tr(`ล้างช่อง${label}`, `Clear ${label}`)}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => (open ? setQuery('') : onChange(''))}
             className="absolute right-1 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-xl hover:bg-slate-200"
@@ -137,12 +149,12 @@ export function EndpointSelect({ label, value, onChange }: Props) {
         <div className="mt-2 rounded-2xl bg-white p-1 shadow-lg ring-1 ring-slate-200">
           {options.length === 0 ? (
             <p role="status" className="p-3 text-sm text-ink-soft">
-              ไม่พบ “{q}” ลองพิมพ์สั้นลง เช่น สยาม อโศก สีลม หรือชื่อสถานี BTS/MRT
+              {tr(`ไม่พบ “${q}” ลองพิมพ์สั้นลง เช่น สยาม อโศก สีลม หรือชื่อสถานี BTS/MRT`, `No match for “${q}”. Try a shorter name such as Siam, Asok or Silom`)}
             </p>
           ) : (
             <>
-              {!q && <p className="px-3 pt-2 text-xs text-ink-muted">พิมพ์เพื่อค้นหา หรือเลือกจากรายการ</p>}
-              <ul id={listId} role="listbox" aria-label={`ตัวเลือกสำหรับช่อง${label}`}>
+              {!q && <p className="px-3 pt-2 text-xs text-ink-muted">{tr('พิมพ์เพื่อค้นหา หรือเลือกจากรายการ', 'Type to search, or pick one below')}</p>}
+              <ul id={listId} role="listbox" aria-label={tr(`ตัวเลือกสำหรับช่อง${label}`, `Options for ${label}`)}>
                 {options.map((o, i) => (
                   <li
                     key={o.value}

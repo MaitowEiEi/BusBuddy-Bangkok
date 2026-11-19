@@ -9,6 +9,7 @@ import { useApp } from '../../state/AppContext';
 import { CrowdBadge, InfoChip, RouteBadge } from '../ui/Badges';
 import { ItinerarySteps } from './ItinerarySteps';
 import { routesForLeg } from './planUi';
+import { useT } from '../../lib/i18n';
 
 export type DisruptionTag = 'affected' | 'avoids' | null;
 
@@ -24,6 +25,7 @@ interface Props {
 
 export function ItineraryCard({ itinerary: it, nowMs, expanded, onToggle, tags, disruptionTag, destinationLabel }: Props) {
   const { network } = useApp();
+  const tr = useT();
   const detailsId = useId();
   const clock = formatClockRange(nowMs, it.range);
 
@@ -32,23 +34,23 @@ export function ItineraryCard({ itinerary: it, nowMs, expanded, onToggle, tags, 
     notes.push({
       key: 'comfort', Icon: Users, cls: 'text-emerald-800',
       text: it.comfortExtraMin
-        ? `รอคันที่แน่นน้อยกว่า (ถึงช้ากว่าคันแรกประมาณ ${it.comfortExtraMin} นาที)`
-        : 'เลือกคันที่แน่นน้อยกว่า',
+        ? tr(`รอคันที่แน่นน้อยกว่า (ถึงช้ากว่าคันแรกประมาณ ${it.comfortExtraMin} นาที)`, `Waits for a less crowded bus (about ${it.comfortExtraMin} min later)`)
+        : tr('เลือกคันที่แน่นน้อยกว่า', 'Picks a less crowded bus'),
     });
   }
   if (it.usesSchedule) {
-    notes.push({ key: 'schedule', Icon: CalendarClock, cls: 'text-ink-soft', text: 'บางช่วงไม่มีข้อมูลรถสด ใช้ความถี่ตามตารางประมาณเวลา' });
+    notes.push({ key: 'schedule', Icon: CalendarClock, cls: 'text-ink-soft', text: tr('บางช่วงไม่มีข้อมูลรถสด ใช้ความถี่ตามตารางประมาณเวลา', 'No live data for some parts; times use timetable frequency') });
   }
   if (it.catchFeasibility === 'tight' || it.catchFeasibility === 'miss') {
-    notes.push({ key: 'catch', Icon: AlertTriangle, cls: 'text-amber-800', text: 'คันแรกอาจเดินไปไม่ทัน' });
+    notes.push({ key: 'catch', Icon: AlertTriangle, cls: 'text-amber-800', text: tr('คันแรกอาจเดินไปไม่ทัน', 'You may miss the first bus')});
   }
   if (it.tightTransfer) {
-    notes.push({ key: 'transfer', Icon: AlertTriangle, cls: 'text-amber-800', text: 'เวลาต่อรถกระชั้น' });
+    notes.push({ key: 'transfer', Icon: AlertTriangle, cls: 'text-amber-800', text: tr('เวลาต่อรถกระชั้น', 'Tight transfer') });
   }
 
   return (
     <article
-      aria-label={`ทางเลือก: ถึงประมาณ ${clock} น.`}
+      aria-label={tr(`ทางเลือก: ถึงประมาณ ${clock} น.`, `Option: arrive about ${clock}`)}
       className={`rounded-2xl bg-white ${expanded ? 'ring-2 ring-brand-600' : 'ring-1 ring-slate-200'}`}
     >
       <button
@@ -66,13 +68,13 @@ export function ItineraryCard({ itinerary: it, nowMs, expanded, onToggle, tags, 
             {disruptionTag === 'avoids' && (
               <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 ring-1 ring-emerald-200">
                 <ShieldCheck aria-hidden className="h-3.5 w-3.5" />
-                เลี่ยงจุดขัดข้อง
+                {tr('เลี่ยงจุดขัดข้อง', 'Avoids disruption')}
               </span>
             )}
             {disruptionTag === 'affected' && (
               <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2.5 py-0.5 text-xs font-semibold text-red-800 ring-1 ring-red-200">
                 <AlertOctagon aria-hidden className="h-3.5 w-3.5" />
-                ผ่านช่วงที่มีเหตุขัดข้อง
+                {tr('ผ่านช่วงที่มีเหตุขัดข้อง', 'Passes disruption')}
               </span>
             )}
           </span>
@@ -94,12 +96,12 @@ export function ItineraryCard({ itinerary: it, nowMs, expanded, onToggle, tags, 
                 {(i > 0 || it.access.distanceM > 0) && <ChevronRight aria-hidden className="h-4 w-4 text-slate-400" />}
                 {shown.map((r, k) => (
                   <span key={r.id} className="flex items-center gap-1">
-                    {k > 0 && <span className="text-xs text-ink-muted">หรือ</span>}
+                    {k > 0 && <span className="text-xs text-ink-muted">{tr('หรือ', 'or')}</span>}
                     <RouteBadge route={r} size="sm" />
                   </span>
                 ))}
                 {routes.length > shown.length && (
-                  <span className="text-xs text-ink-muted">+{routes.length - shown.length} สาย</span>
+                  <span className="text-xs text-ink-muted">{tr(`+${routes.length - shown.length} สาย`, `+${routes.length - shown.length} more`)}</span>
                 )}
               </span>
             );
@@ -112,12 +114,12 @@ export function ItineraryCard({ itinerary: it, nowMs, expanded, onToggle, tags, 
           )}
         </span>
 
-        <span className="mt-2 block text-xl font-bold">ถึงประมาณ {clock} น.</span>
-        <span className="block text-sm text-ink-soft">ใช้เวลาประมาณ {it.range.minMin}–{it.range.maxMin} นาที</span>
+        <span className="mt-2 block text-xl font-bold">{tr(`ถึงประมาณ ${clock} น.`, `Arrive about ${clock}`)}</span>
+        <span className="block text-sm text-ink-soft">{tr(`ใช้เวลาประมาณ ${it.range.minMin}–${it.range.maxMin} นาที`, `About ${it.range.minMin}–${it.range.maxMin} min`)}</span>
 
         <span className="mt-2 flex flex-wrap gap-1.5">
-          <InfoChip icon={Shuffle}>{it.transfers === 0 ? 'ไม่ต้องเปลี่ยนรถ' : `เปลี่ยนรถ ${it.transfers} ครั้ง`}</InfoChip>
-          <InfoChip icon={Footprints}>{it.walkM === 0 ? 'แทบไม่ต้องเดิน' : `เดินรวม ${formatDistance(it.walkM)}`}</InfoChip>
+          <InfoChip icon={Shuffle}>{it.transfers === 0 ? tr('ไม่ต้องเปลี่ยนรถ', 'No transfers') : tr(`เปลี่ยนรถ ${it.transfers} ครั้ง`, `${it.transfers} transfer${it.transfers > 1 ? 's' : ''}`)}</InfoChip>
+          <InfoChip icon={Footprints}>{it.walkM === 0 ? tr('แทบไม่ต้องเดิน', 'Almost no walking') : tr(`เดินรวม ${formatDistance(it.walkM)}`, `Walk ${formatDistance(it.walkM)}`)}</InfoChip>
           <InfoChip icon={Banknote}>{formatFareEstimate(it.fare, it.fareKnown)}</InfoChip>
           <CrowdBadge level={it.crowd} />
         </span>
@@ -134,7 +136,7 @@ export function ItineraryCard({ itinerary: it, nowMs, expanded, onToggle, tags, 
         )}
 
         <span className="mt-2 block text-sm font-medium text-brand-700">
-          {expanded ? 'ซ่อนขั้นตอน' : 'ดูขั้นตอนการเดินทาง'}
+          {expanded ? tr('ซ่อนขั้นตอน', 'Hide steps') : tr('ดูขั้นตอนการเดินทาง', 'Show steps')}
         </span>
       </button>
 

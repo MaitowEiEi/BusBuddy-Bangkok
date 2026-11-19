@@ -1,6 +1,7 @@
 import { boardableVariants } from '../../domain/lookup';
 import { nearbyStops } from '../../domain/walking';
-import { CROWD_LABEL, QUALITY_LABEL } from '../../lib/labels';
+import { getLang, pickName } from '../../lib/i18n';
+import { crowdLabel, qualityLabel } from '../../lib/labels';
 import { bearingDeg, haversineM } from '../../sim/geo';
 import type { PlanPreview } from '../../state/planPreview';
 import type { LatLng, LiveSnapshot, Place, RouteVariant, Stop, TransitNetwork, VehicleLiveState } from '../../types/transit';
@@ -83,9 +84,11 @@ export function directionArrows(points: LatLng[]): { position: LatLng; bearing: 
 }
 
 export function vehicleLabel(net: TransitNetwork, vs: VehicleLiveState): string {
+  const lang = getLang();
   const route = net.routeById[vs.routeId];
   const variant = net.variantById[vs.variantId];
-  return `รถสาย ${route?.shortName ?? ''} ${variant?.headsignTh ?? ''} · ${CROWD_LABEL[vs.crowd].short} · ${QUALITY_LABEL[vs.quality].short}`;
+  const head = variant ? pickName(lang, variant.headsignTh, variant.headsignEn) : '';
+  return `${lang === 'en' ? 'Route' : 'รถสาย'} ${route?.shortName ?? ''} ${head} · ${crowdLabel(vs.crowd).short} · ${qualityLabel(vs.quality).short}`;
 }
 
 // ---------- which stops to draw ----------

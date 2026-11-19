@@ -1,5 +1,5 @@
 import type { RouteVariant, Stop, TransitNetwork } from '../types/transit';
-
+import type { Lang } from '../lib/i18n';
 /** The variant to open for a route: the full outbound trip if it exists, otherwise the best one we have. */
 
 export function mainVariantId(net: TransitNetwork, routeId: string): string | null {
@@ -61,6 +61,13 @@ export function placeLabel(name: string, rail: boolean): string {
   return /^[A-Za-z]/.test(name) ? `สถานี ${name}` : `สถานี${name}`;
 }
 
-export function stopLabel(net: TransitNetwork, stop: Stop): string {
-  return placeLabel(stop.nameTh, isRailStop(net, stop.id));
+/** English: "Siam stop", "BTS National Stadium". */
+export function placeLabelEn(name: string, rail: boolean): string {
+  if (rail || /\b(stop|station)$/i.test(name)) return name;
+  return `${name} stop`;
+}
+
+export function stopLabel(net: TransitNetwork, stop: Stop, lang: Lang = 'th'): string {
+  const rail = isRailStop(net, stop.id);
+  return lang === 'en' && stop.nameEn ? placeLabelEn(stop.nameEn, rail) : placeLabel(stop.nameTh, rail);
 }

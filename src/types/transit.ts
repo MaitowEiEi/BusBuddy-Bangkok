@@ -13,7 +13,9 @@ export interface Stop {
   id: string;
   code: string; // fictional display code
   nameTh: string;
+  nameEn?: string;
   areaTh: string;
+  areaEn?: string;
   position: LatLng;
   keywords: string[];
 }
@@ -21,7 +23,9 @@ export interface Stop {
 export interface Place {
   id: string;
   nameTh: string;
+  nameEn?: string;
   categoryTh: string;
+  categoryEn?: string;
   position: LatLng;
   keywords: string[];
 }
@@ -52,6 +56,8 @@ export interface Route {
   mode?: RouteMode;
   agencyTh?: string;
   legacyName?: string;
+  nameEn?: string;
+  agencyEn?: string;
   fareKnown?: boolean;
   scheduleSource?: 'today' | 'other_day' | 'estimated';
 }
@@ -64,7 +70,9 @@ export interface RouteVariantDef {
   direction: Direction;
   isShortTurn: boolean;
   variantLabelTh: string;
+  variantLabelEn?: string;
   headsignTh: string;
+  headsignEn?: string;
   path: PathPoint[];
 }
 

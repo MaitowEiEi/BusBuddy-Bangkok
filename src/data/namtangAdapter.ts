@@ -31,6 +31,7 @@ interface NtVariant {
   routeId: string;
   directionId: number;
   headsignTh: string;
+  headsignEn?: string;
   stopIds: string[];
   arrSec: number[] | null;
   shapeId: string | null;
@@ -44,6 +45,7 @@ interface NtRoute {
   shortName: string;
   legacyName?: string | null;
   longNameTh: string;
+  longNameEn?: string;
   descTh?: string;
   mode: RouteMode;
   color: string;
@@ -81,7 +83,7 @@ export interface NamtangSource {
 interface NtData {
   source: NamtangSource;
   hubs: NtHub[];
-  agencies: { id: string; nameTh: string }[];
+  agencies: { id: string; nameTh: string; nameEn?: string }[];
   routes: NtRoute[];
   variants: NtVariant[];
   stops: NtStop[];
@@ -94,6 +96,13 @@ const data = JSON.parse(namtangText) as NtData;
 
 /** Credit required by CC BY 4.0. */
 export const namtangSource: NamtangSource = data.source;
+/** English names of the import hubs (the JSON has Thai names only). */
+const HUB_EN: Record<string, string> = {
+  victory: 'Victory Monument',
+  siam: 'Siam',
+  'silom-saladaeng': 'Silom (Sala Daeng)',
+  'silom-chongnonsi': 'Silom (Chong Nonsi)',
+};
 
 // ---------- helpers ----------
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
@@ -278,13 +287,16 @@ function buildVariant(nv: NtVariant, routeId: string, stopById: Map<string, NtSt
   const stopIds = nv.stopIds.slice(a, b + 1);
   const direction: Direction = nv.directionId === 1 ? 'inbound' : 'outbound';
   const headsignTh = nv.headsignTh;
+  const headsignEn = nv.headsignEn || undefined;
   const variant: RouteVariant = {
     id: nv.id,
     routeId,
     direction,
     isShortTurn: nv.isShortTurn,
     variantLabelTh: `${nv.isShortTurn ? 'เที่ยวสั้น ' : ''}ไป${headsignTh}${clipped ? ' (เฉพาะช่วงในเมือง)' : ''}`,
+    variantLabelEn: `${nv.isShortTurn ? 'Short trip ' : ''}to ${headsignEn ?? headsignTh}${clipped ? ' (city section only)' : ''}`,
     headsignTh,
+    headsignEn,
     path: stopIds.map((stopId) => ({ stopId })),
     stopIds,
     shape,
@@ -507,7 +519,7 @@ export function buildNamtangNetwork(places: Place[]): TransitNetwork {
   const ntStopById = new Map(data.stops.map((s) => [s.id, s] as const));
   const ntRouteById = new Map(data.routes.map((r) => [r.id, r] as const));
   const agencyTh = new Map(data.agencies.map((a) => [a.id, a.nameTh] as const));
-
+  const agencyEn = new Map(data.agencies.map((a) => [a.id, a.nameEn || undefined] as const));
   // 1. Merge duplicate route_ids (same operator, number and name; loop left/right stay separate)
   const primaryByKey = new Map<string, NtRoute>();
   const primaryOf = new Map<string, string>();
@@ -553,6 +565,7 @@ export function buildNamtangNetwork(places: Place[]): TransitNetwork {
       id: routeId,
       shortName: rail ? `${nt.mode.toUpperCase()} ${nt.shortName}` : nt.shortName,
       nameTh: nt.legacyName ? `${nt.longNameTh} (เดิมสาย ${nt.legacyName})` : nt.longNameTh,
+      nameEn: nt.longNameEn || undefined,
       serviceType,
       color: nt.color,
       avgSpeedKmh: averageSpeed(list, rail),
@@ -562,6 +575,7 @@ export function buildNamtangNetwork(places: Place[]): TransitNetwork {
       frequency: sched.periods,
       mode: nt.mode,
       agencyTh: agencyTh.get(nt.agencyId) ?? nt.agencyId,
+      agencyEn: agencyEn.get(nt.agencyId),
       legacyName: nt.legacyName ?? undefined,
       fareKnown: fare.known,
       scheduleSource: sched.source,
@@ -577,18 +591,20 @@ export function buildNamtangNetwork(places: Place[]): TransitNetwork {
   }
 
   // 4. Only the stops that the clipped variants use
-  const nearestHub = (p: LatLng): string | undefined =>
-    data.hubs.find((h) => distM(p, [h.lat, h.lon]) <= 1200)?.nameTh;
+  const nearestHub = (p: LatLng) => data.hubs.find((h) => distM(p, [h.lat, h.lon]) <= 1200);
   const stops: Stop[] = [];
   for (const id of new Set(variants.flatMap((v) => v.stopIds))) {
     const s = ntStopById.get(id);
     if (!s) continue;
     const position: LatLng = [s.lat, s.lon];
+    const hub = nearestHub(position);
     stops.push({
       id,
       code: id,
       nameTh: s.nameTh,
-      areaTh: nearestHub(position) ?? 'กรุงเทพฯ',
+      nameEn: s.nameEn || undefined,
+      areaTh: hub?.nameTh ?? 'กรุงเทพฯ',
+      areaEn: hub ? HUB_EN[hub.id] ?? hub.nameTh : 'Bangkok',
       position,
       keywords: [s.nameEn].filter(Boolean),
     });
