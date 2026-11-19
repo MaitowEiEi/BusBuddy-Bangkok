@@ -1,14 +1,22 @@
 import L from 'leaflet';
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { stopLabel } from '../../domain/lookup';
 import { prefersReducedMotion } from '../../hooks/useMediaQuery';
-import type { LiveSnapshot, TransitNetwork } from '../../types/transit';
+import { pickName, useLang, useT, type Lang } from '../../lib/i18n';
+import { crowdLabel, statusLabel } from '../../lib/labels';
+import { activeProvider } from '../../services/activeProvider';
+import type { LiveSnapshot, TransitNetwork, VehicleLiveState } from '../../types/transit';
 import type { Origin } from '../../types/ui';
 import {
-  baseVariants, directionArrows, pickStops, rankedStops, shapeFrom, vehicleLabel, type MapScene, type MapTarget,
+  baseVariants,
+  directionArrows,
+  pickStops,
+  rankedStops,
+  shapeFrom,
+  vehicleLabel,
+  type MapScene,
+  type MapTarget,
 } from './mapModel';
-import { activeProvider } from '../../services/activeProvider';
-import { pickName, useLang, useT } from '../../lib/i18n';
-import { stopLabel } from '../../domain/lookup';
 
 interface Props {
   network: TransitNetwork;
@@ -21,8 +29,16 @@ interface Props {
   onTilesFailed: () => void;
 }
 
-interface Layers { routes: L.LayerGroup; stops: L.LayerGroup; vehicles: L.LayerGroup; overlay: L.LayerGroup }
-interface Viewport { zoom: number; bounds: L.LatLngBounds }
+interface Layers {
+  routes: L.LayerGroup;
+  stops: L.LayerGroup;
+  vehicles: L.LayerGroup;
+  overlay: L.LayerGroup;
+}
+interface Viewport {
+  zoom: number;
+  bounds: L.LatLngBounds;
+}
 
 /** Home map: buses appear from this zoom as dots, and get route numbers from VEHICLE_LABEL_ZOOM. */
 const VEHICLES_MIN_ZOOM = 15;
@@ -37,9 +53,19 @@ function arrowIcon(color: string, bearing: number): L.DivIcon {
   });
 }
 
+function localizedVehicleLabel(network: TransitNetwork, vs: VehicleLiveState, lang: Lang): string {
+  if (lang !== 'en') return vehicleLabel(network, vs);
+  const route = network.routeById[vs.routeId];
+  const variant = network.variantById[vs.variantId];
+  const headsign = variant ? pickName(lang, variant.headsignTh, variant.headsignEn) : '';
+  return `Route ${route.shortName}${headsign ? ` ${headsign}` : ''} · ${statusLabel(vs.status)} · ${crowdLabel(vs.crowd).short}`;
+}
+
 export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef, onSelect, onTilesFailed }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
+  const attributionRef = useRef<L.Control.Attribution | null>(null);
+  const fossgisCreditRef = useRef<string | null>(null);
   const layersRef = useRef<Layers | null>(null);
   const vehicleMarkers = useRef(new Map<string, { marker: L.Marker; html: string }>());
   const onSelectRef = useRef(onSelect);
@@ -63,12 +89,11 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
+
     const map = L.map(el, { center: [13.758, 100.54], zoom: 14, zoomControl: false, attributionControl: false });
-    L.control.zoom({ position: 'topleft', zoomInTitle: 'ขยายแผนที่', zoomOutTitle: 'ย่อแผนที่' }).addTo(map);
+    L.control.zoom({ position: 'topleft', zoomInTitle: 'Zoom in', zoomOutTitle: 'Zoom out' }).addTo(map);
     const attribution = L.control.attribution({ position: 'topright', prefix: false }).addTo(map);
-    if (activeProvider.id !== 'mock') {
-      attribution.addAttribution('ทางเดิน <a href="https://routing.openstreetmap.de" target="_blank" rel="noreferrer">FOSSGIS</a>');
-    }
+    attributionRef.current = attribution;
 
     const tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
@@ -83,13 +108,23 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
       failed = true;
       onFailRef.current();
     };
-    tiles.on('tileload', () => { loaded = true; });
-    tiles.on('tileerror', () => { errors += 1; if (errors >= 4) fail(); });
+    tiles.on('tileload', () => {
+      loaded = true;
+    });
+    tiles.on('tileerror', () => {
+      errors += 1;
+      if (errors >= 4) fail();
+    });
     const failTimer = window.setTimeout(fail, 10000);
 
     let noAnimTimer = 0;
-    map.on('zoomstart', () => { window.clearTimeout(noAnimTimer); el.classList.add('bb-noanim'); });
-    map.on('zoomend', () => { noAnimTimer = window.setTimeout(() => el.classList.remove('bb-noanim'), 120); });
+    map.on('zoomstart', () => {
+      window.clearTimeout(noAnimTimer);
+      el.classList.add('bb-noanim');
+    });
+    map.on('zoomend', () => {
+      noAnimTimer = window.setTimeout(() => el.classList.remove('bb-noanim'), 120);
+    });
 
     // Redraw stops and buses for the visible area after each pan or zoom.
     const updateViewport = () => setViewport({ zoom: map.getZoom(), bounds: map.getBounds().pad(0.2) });
@@ -102,6 +137,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
       vehicles: L.layerGroup().addTo(map),
       overlay: L.layerGroup().addTo(map),
     };
+
     const markers = vehicleMarkers.current;
     const ro = new ResizeObserver(() => map.invalidateSize());
     ro.observe(el);
@@ -112,11 +148,43 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
       window.clearTimeout(noAnimTimer);
       ro.disconnect();
       markers.clear();
+      attributionRef.current = null;
+      fossgisCreditRef.current = null;
       layersRef.current = null;
       mapRef.current = null;
       map.remove();
     };
   }, []);
+
+  // Keep zoom button titles and attribution text synced with language.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const zoomIn = el.querySelector<HTMLElement>('.leaflet-control-zoom-in');
+    const zoomOut = el.querySelector<HTMLElement>('.leaflet-control-zoom-out');
+    const inLabel = lang === 'en' ? 'Zoom in' : 'ขยายแผนที่';
+    const outLabel = lang === 'en' ? 'Zoom out' : 'ย่อแผนที่';
+    if (zoomIn) {
+      zoomIn.title = inLabel;
+      zoomIn.setAttribute('aria-label', inLabel);
+    }
+    if (zoomOut) {
+      zoomOut.title = outLabel;
+      zoomOut.setAttribute('aria-label', outLabel);
+    }
+
+    if (activeProvider.id !== 'mock' && attributionRef.current) {
+      if (fossgisCreditRef.current) {
+        attributionRef.current.removeAttribution(fossgisCreditRef.current);
+      }
+      const nextCredit =
+        lang === 'en'
+          ? 'Walking <a href="https://routing.openstreetmap.de" target="_blank" rel="noreferrer">FOSSGIS</a>'
+          : 'ทางเดิน <a href="https://routing.openstreetmap.de" target="_blank" rel="noreferrer">FOSSGIS</a>';
+      attributionRef.current.addAttribution(nextCredit);
+      fossgisCreditRef.current = nextCredit;
+    }
+  }, [lang]);
 
   // Route lines: all routes (thin) on the home map, only the selected ones when something is open.
   useEffect(() => {
@@ -124,6 +192,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     if (!g) return;
     g.clearLayers();
     const { highlights, focused: isFocused } = sceneRef.current;
+
     if (!isFocused) {
       for (const v of baseVariants(network)) {
         const route = network.routeById[v.routeId];
@@ -138,6 +207,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
           .addTo(g);
       }
     }
+
     for (const h of highlights) {
       const v = network.variantById[h.variantId];
       const route = v && network.routeById[v.routeId];
@@ -148,14 +218,26 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
         .on('click', () => onSelectRef.current({ kind: 'variant', id: v.id }))
         .addTo(g);
       for (const a of directionArrows(pts)) {
-        L.marker(a.position, { icon: arrowIcon(route.color, a.bearing), interactive: false, keyboard: false, zIndexOffset: -500 }).addTo(g);
+        L.marker(a.position, {
+          icon: arrowIcon(route.color, a.bearing),
+          interactive: false,
+          keyboard: false,
+          zIndexOffset: -500,
+        }).addTo(g);
       }
     }
+
     for (const w of sceneRef.current.walks) {
-      L.polyline(w, { color: '#334155', weight: 4, opacity: 0.9, dashArray: '1 9', lineCap: 'round', interactive: false }).addTo(g);
+      L.polyline(w, {
+        color: '#334155',
+        weight: 4,
+        opacity: 0.9,
+        dashArray: '1 9',
+        lineCap: 'round',
+        interactive: false,
+      }).addTo(g);
     }
   }, [network, highlightKey, walkKey, focused, zoomedOut]);
-
 
   // Stops: main interchanges when zoomed out, every stop when zoomed in, only related stops when focused.
   useEffect(() => {
@@ -173,7 +255,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
       const from = Math.max(0, h.fromStopIndex);
       const to = h.toStopIndex ?? v.stopIds.length - 1;
       for (const id of v.stopIds.slice(from, to + 1)) inScene.add(id);
-      for (const id of [v.stopIds[from], v.stopIds[to]]) if (id) must.add(id); // board / alight / ends
+      for (const id of [v.stopIds[from], v.stopIds[to]]) if (id) must.add(id);
     }
 
     const shown = pickStops(network, ranked, {
@@ -211,13 +293,14 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     if (!g || !snapshot) return;
     const { highlights, focused: isFocused } = sceneRef.current;
     const zoom = viewport?.zoom ?? 14;
+
     const routeFilter = new Set<string>();
     for (const h of highlights) {
       const v = network.variantById[h.variantId];
       if (v) routeFilter.add(v.routeId);
     }
-    const seen = new Set<string>();
 
+    const seen = new Set<string>();
     for (const vs of snapshot.vehicles) {
       const route = network.routeById[vs.routeId];
       if (!route) continue;
@@ -242,7 +325,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
           `<span class="bb-veh__body">${route.shortName}</span>` +
           (flag ? `<span class="bb-veh__flag">${flag}</span>` : '') +
           '</div>';
-      const label = vehicleLabel(network, vs);
+      const label = localizedVehicleLabel(network, vs, lang);
       const zIndex = selected ? 2000 : 1000;
 
       const existing = vehicleMarkers.current.get(vs.vehicleId);
@@ -269,6 +352,7 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
         vehicleMarkers.current.set(vs.vehicleId, { marker, html });
       }
     }
+
     for (const [id, entry] of vehicleMarkers.current) {
       if (!seen.has(id)) {
         g.removeLayer(entry.marker);
@@ -284,10 +368,21 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     g.clearLayers();
     if (origin) {
       if (origin.accuracyM) {
-        L.circle(origin.position, { radius: origin.accuracyM, color: '#2563eb', weight: 1, fillOpacity: 0.08, interactive: false }).addTo(g);
+        L.circle(origin.position, {
+          radius: origin.accuracyM,
+          color: '#2563eb',
+          weight: 1,
+          fillOpacity: 0.08,
+          interactive: false,
+        }).addTo(g);
       }
       L.marker(origin.position, {
-        icon: L.divIcon({ className: 'bb-origin-icon', html: '<div class="bb-origin"></div>', iconSize: [22, 22], iconAnchor: [11, 11] }),
+        icon: L.divIcon({
+          className: 'bb-origin-icon',
+          html: '<div class="bb-origin"></div>',
+          iconSize: [22, 22],
+          iconAnchor: [11, 11],
+        }),
         interactive: false,
         keyboard: false,
         zIndexOffset: 800,
@@ -295,7 +390,12 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     }
     if (place) {
       L.marker(place.position, {
-        icon: L.divIcon({ className: 'bb-place-icon', html: '<div class="bb-place"></div>', iconSize: [26, 26], iconAnchor: [13, 30] }),
+        icon: L.divIcon({
+          className: 'bb-place-icon',
+          html: '<div class="bb-place"></div>',
+          iconSize: [26, 26],
+          iconAnchor: [13, 30],
+        }),
         interactive: false,
         keyboard: false,
         zIndexOffset: 900,
@@ -320,5 +420,12 @@ export function LeafletMap({ network, snapshot, scene, fitKey, origin, insetRef,
     return () => window.clearTimeout(id);
   }, [fitKey, insetRef]);
 
-  return <div ref={containerRef} className="bb-map h-full w-full" role="region" aria-label={tr('แผนที่เส้นทางรถเมล์ (ข้อมูลรถจำลอง)', 'Bus map (simulated bus data)')} />;
+  return (
+    <div
+      ref={containerRef}
+      className="bb-map h-full w-full"
+      role="region"
+      aria-label={tr('แผนที่เส้นทางรถเมล์ (ข้อมูลรถจำลอง)', 'Bus map (simulated bus data)')}
+    />
+  );
 }

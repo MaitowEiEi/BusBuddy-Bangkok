@@ -5,23 +5,42 @@
  * Simulated: vehicles, positions, load, and any feature the data does not cover (featureSource 'sim').
  * Data: Office of Transport and Traffic Policy and Planning (OTP), Ministry of Transport, via Namtang. CC BY 4.0.
  */
+
 import namtangText from './namtang.json?raw';
+import { PLACES } from './places';
 import type {
-  Accessibility, Direction, FareRule, FeatureSource, FrequencyPeriod, LatLng, Place, Route, RouteMode,
-  RouteVariant, ServiceType, Stop, TransitNetwork, Vehicle, VehicleType,
+  Accessibility,
+  Direction,
+  FareRule,
+  FeatureSource,
+  FrequencyPeriod,
+  LatLng,
+  Place,
+  Route,
+  RouteMode,
+  RouteVariant,
+  ServiceType,
+  Stop,
+  TransitNetwork,
+  Vehicle,
+  VehicleType,
 } from '../types/transit';
 
 // ---------- settings (edit, then reload) ----------
+
 /** Routes are cut to the part inside this circle so the map and simulation stay fast on phones. null = whole routes. */
 const FOCUS_CENTER: LatLng = [13.7456, 100.53413]; // Siam
 const FOCUS_RADIUS_M: number | null = 7000;
+
 /** Simulated buses per route. More = closer to the real headway, but a heavier map. */
 const MAX_VEHICLES_PER_ROUTE = 4;
+
 const LAYOVER_MIN = 8;
 const SLOT_MIN = 5;
 const DAY_SLOTS = (24 * 60) / SLOT_MIN;
 
 // ---------- JSON written by scripts/import-namtang.mjs ----------
+
 interface NtService {
   periods: [number, number, number][];
   departures: number[];
@@ -96,6 +115,7 @@ const data = JSON.parse(namtangText) as NtData;
 
 /** Credit required by CC BY 4.0. */
 export const namtangSource: NamtangSource = data.source;
+
 /** English names of the import hubs (the JSON has Thai names only). */
 const HUB_EN: Record<string, string> = {
   victory: 'Victory Monument',
@@ -105,6 +125,7 @@ const HUB_EN: Record<string, string> = {
 };
 
 // ---------- helpers ----------
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
@@ -218,6 +239,7 @@ function sliceLine(line: LatLng[], cum: number[], fromM: number, toM: number): L
 }
 
 // ---------- service calendar (which timetable runs today) ----------
+
 const today = (() => {
   const now = new Date();
   const ymd = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Bangkok' }).replace(/-/g, '');
@@ -236,6 +258,7 @@ function runsToday(serviceId: string): boolean {
 }
 
 // ---------- variants ----------
+
 interface BuiltVariant {
   variant: RouteVariant;
   rideSec: number | null;
@@ -288,6 +311,7 @@ function buildVariant(nv: NtVariant, routeId: string, stopById: Map<string, NtSt
   const direction: Direction = nv.directionId === 1 ? 'inbound' : 'outbound';
   const headsignTh = nv.headsignTh;
   const headsignEn = nv.headsignEn || undefined;
+
   const variant: RouteVariant = {
     id: nv.id,
     routeId,
@@ -337,19 +361,20 @@ function averageSpeed(list: BuiltVariant[], rail: boolean): number {
 }
 
 // ---------- timetable ----------
+
 interface Schedule {
   periods: FrequencyPeriod[];
   source: 'today' | 'other_day' | 'estimated';
   middayHeadwayMin: number;
 }
 
-function periodLabel(min: number): string {
-  if (min < 6 * 60) return 'เช้ามืด';
-  if (min < 9 * 60) return 'เร่งด่วนเช้า';
-  if (min < 16 * 60) return 'กลางวัน';
-  if (min < 19 * 60) return 'เร่งด่วนเย็น';
-  if (min < 22 * 60) return 'หัวค่ำ';
-  return 'กลางคืน';
+function periodLabels(min: number): { labelTh: string; labelEn: string } {
+  if (min < 6 * 60) return { labelTh: 'เช้ามืด', labelEn: 'Early morning' };
+  if (min < 9 * 60) return { labelTh: 'เร่งด่วนเช้า', labelEn: 'Morning rush' };
+  if (min < 16 * 60) return { labelTh: 'กลางวัน', labelEn: 'Midday' };
+  if (min < 19 * 60) return { labelTh: 'เร่งด่วนเย็น', labelEn: 'Evening rush' };
+  if (min < 22 * 60) return { labelTh: 'หัวค่ำ', labelEn: 'Evening' };
+  return { labelTh: 'กลางคืน', labelEn: 'Night' };
 }
 
 function hhmm(min: number): string {
@@ -365,12 +390,14 @@ const headwayPair = (sec: number): [number, number] => [
 function buildSchedule(services: Record<string, NtService>): Schedule {
   const all = Object.entries(services);
   const todays = all.filter(([id]) => runsToday(id));
+
   const slots = new Array<number>(DAY_SLOTS).fill(Infinity); // headway in seconds per 5-minute slot
   const mark = (fromSec: number, toSec: number, headwaySec: number) => {
     const first = Math.max(0, Math.floor(fromSec / 60 / SLOT_MIN));
     const last = Math.min(DAY_SLOTS, Math.ceil(toSec / 60 / SLOT_MIN));
     for (let i = first; i < last; i++) slots[i] = Math.min(slots[i], headwaySec);
   };
+
   for (const [, svc] of todays.length > 0 ? todays : all) {
     for (const [from, to, headway] of svc.periods) mark(from, to, headway);
     const d = svc.departures;
@@ -394,23 +421,38 @@ function buildSchedule(services: Record<string, NtService>): Schedule {
       if (hj[0] !== h[0] || hj[1] !== h[1]) break;
       j++;
     }
-    periods.push({ labelTh: periodLabel(i * SLOT_MIN), from: hhmm(i * SLOT_MIN), to: hhmm(j * SLOT_MIN), headwayMin: h });
+    periods.push({
+      ...periodLabels(i * SLOT_MIN),
+      from: hhmm(i * SLOT_MIN),
+      to: hhmm(j * SLOT_MIN),
+      headwayMin: h,
+    });
     i = j;
   }
 
   if (periods.length === 0) {
     return {
-      periods: [{ labelTh: 'ทั้งวัน (ประมาณ)', from: '05:00', to: '22:00', headwayMin: [15, 20] }],
+      periods: [
+        {
+          labelTh: 'ทั้งวัน (ประมาณ)',
+          labelEn: 'All day (est.)',
+          from: '05:00',
+          to: '22:00',
+          headwayMin: [15, 20],
+        },
+      ],
       source: 'estimated',
       middayHeadwayMin: 15,
     };
   }
+
   const noon = slots[(12 * 60) / SLOT_MIN];
   const middaySec = Number.isFinite(noon) ? noon : Math.min(...slots.filter((s) => Number.isFinite(s)));
   return { periods, source: todays.length > 0 ? 'today' : 'other_day', middayHeadwayMin: middaySec / 60 };
 }
 
 // ---------- fares ----------
+
 function fareFor(routeIds: string[], stopCount: number): { fare: FareRule; known: boolean } {
   let min = Infinity;
   let max = 0;
@@ -440,6 +482,7 @@ function fareFor(routeIds: string[], stopCount: number): { fare: FareRule; known
 }
 
 // ---------- simulated fleet ----------
+
 type Wheel = 'yes' | 'no' | 'unknown';
 
 const FLEET: Record<VehicleType, { seats: number; capacity: number }> = {
@@ -515,11 +558,13 @@ function buildVehicles(
 }
 
 // ---------- main ----------
+
 export function buildNamtangNetwork(places: Place[]): TransitNetwork {
   const ntStopById = new Map(data.stops.map((s) => [s.id, s] as const));
   const ntRouteById = new Map(data.routes.map((r) => [r.id, r] as const));
   const agencyTh = new Map(data.agencies.map((a) => [a.id, a.nameTh] as const));
   const agencyEn = new Map(data.agencies.map((a) => [a.id, a.nameEn || undefined] as const));
+
   // 1. Merge duplicate route_ids (same operator, number and name; loop left/right stay separate)
   const primaryByKey = new Map<string, NtRoute>();
   const primaryOf = new Map<string, string>();
@@ -550,22 +595,31 @@ export function buildNamtangNetwork(places: Place[]): TransitNetwork {
   const routes: Route[] = [];
   const variants: RouteVariant[] = [];
   const vehicles: Vehicle[] = [];
+
   for (const [routeId, list] of builtByRoute) {
     const nt = ntRouteById.get(routeId);
     if (!nt) continue;
     const out = pickMain(list, 'outbound') ?? list[0];
     const back = pickMain(list, 'inbound') ?? out;
     const rail = nt.mode !== 'bus';
+
     const sched = buildSchedule(out.services);
     const fare = fareFor(originalIds.get(routeId) ?? [routeId], out.variant.stopIds.length);
     const ac = acFromDescription(nt.descTh);
     const serviceType: ServiceType = ac ?? (rail || rand01(`ac:${routeId}`) < 0.7 ? 'ac' : 'non_ac');
 
+    const baseEn = nt.longNameEn || undefined;
+    const nameEn = baseEn
+      ? nt.legacyName
+        ? `${baseEn} (formerly ${nt.legacyName})`
+        : baseEn
+      : undefined;
+
     const route: Route = {
       id: routeId,
       shortName: rail ? `${nt.mode.toUpperCase()} ${nt.shortName}` : nt.shortName,
       nameTh: nt.legacyName ? `${nt.longNameTh} (เดิมสาย ${nt.legacyName})` : nt.longNameTh,
-      nameEn: nt.longNameEn || undefined,
+      nameEn,
       serviceType,
       color: nt.color,
       avgSpeedKmh: averageSpeed(list, rail),
@@ -582,6 +636,7 @@ export function buildNamtangNetwork(places: Place[]): TransitNetwork {
     };
     routes.push(route);
     variants.push(...list.map((x) => x.variant));
+
     if (!rail) {
       const wheel = wheelFromGtfs(out.wheelchair, back.wheelchair);
       vehicles.push(
@@ -604,7 +659,7 @@ export function buildNamtangNetwork(places: Place[]): TransitNetwork {
       nameTh: s.nameTh,
       nameEn: s.nameEn || undefined,
       areaTh: hub?.nameTh ?? 'กรุงเทพฯ',
-      areaEn: hub ? HUB_EN[hub.id] ?? hub.nameTh : 'Bangkok',
+      areaEn: hub ? (HUB_EN[hub.id] ?? hub.nameTh) : 'Bangkok',
       position,
       keywords: [s.nameEn].filter(Boolean),
     });
@@ -635,11 +690,11 @@ export function buildNamtangNetwork(places: Place[]): TransitNetwork {
     variantIdsByStop,
   };
 }
-import { PLACES } from './places';
 
 export function loadNamtangNetwork(): TransitNetwork {
   return buildNamtangNetwork(PLACES);
 }
+
 export function getNamtangSourceInfo(): NamtangSource {
   return namtangSource;
 }

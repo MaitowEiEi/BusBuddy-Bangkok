@@ -1,15 +1,20 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { useLang, type Lang } from '../../lib/i18n';
 
 interface Props {
   children: ReactNode;
   onReset?: () => void;
 }
+
+interface InnerProps extends Props {
+  lang: Lang;
+}
+
 interface State {
   error: Error | null;
 }
 
-/** Shows a message instead of a blank screen when a panel crashes. */
-export class ErrorBoundary extends Component<Props, State> {
+class ErrorBoundaryInner extends Component<InnerProps, State> {
   state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {
@@ -22,20 +27,34 @@ export class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (!this.state.error) return this.props.children;
+    const isEn = this.props.lang === 'en';
+
     return (
       <div role="alert" className="m-4 rounded-2xl bg-red-50 p-4 text-red-900 ring-1 ring-red-200">
-        <p className="font-semibold">ส่วนนี้แสดงผลไม่สำเร็จ</p>
-        <p className="mt-1 text-sm">ข้อมูลบางส่วนอาจยังไม่รองรับ ลองกลับไปหน้าหลักแล้วเลือกใหม่</p>
+        <p className="font-semibold">
+          {isEn ? 'Unable to display this section' : 'ส่วนนี้แสดงผลไม่สำเร็จ'}
+        </p>
+        <p className="mt-1 text-sm">
+          {isEn
+            ? 'Some data may not be supported yet. Try returning to the home screen and selecting again.'
+            : 'ข้อมูลบางส่วนอาจยังไม่รองรับ ลองกลับไปหน้าหลักแล้วเลือกใหม่'}
+        </p>
         {this.props.onReset && (
           <button
             type="button"
             onClick={this.props.onReset}
             className="mt-3 min-h-11 rounded-xl bg-white px-4 font-semibold ring-1 ring-red-300 hover:bg-red-100"
           >
-            กลับหน้าหลัก
+            {isEn ? 'Back to home' : 'กลับหน้าหลัก'}
           </button>
         )}
       </div>
     );
   }
+}
+
+/** Shows a message instead of a blank screen when a panel crashes. */
+export function ErrorBoundary(props: Props) {
+  const lang = useLang();
+  return <ErrorBoundaryInner {...props} lang={lang} />;
 }

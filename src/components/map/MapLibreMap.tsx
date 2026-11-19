@@ -1,21 +1,26 @@
 import * as maplibregl from 'maplibre-gl';
+import type { AttributionControl, GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
-
 maplibregl.setWorkerUrl(workerUrl);
 
-import type { GeoJSONSource, Map as MlMap, Marker } from 'maplibre-gl';
-
-import 'maplibre-gl/dist/maplibre-gl.css';
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
 import { stopLabel } from '../../domain/lookup';
 import { prefersReducedMotion } from '../../hooks/useMediaQuery';
 import { pickName, useLang, useT, type Lang } from '../../lib/i18n';
+import { crowdLabel, statusLabel } from '../../lib/labels';
 import { activeProvider } from '../../services/activeProvider';
-import type { LatLng, LiveSnapshot, TransitNetwork } from '../../types/transit';
+import type { LatLng, LiveSnapshot, TransitNetwork, VehicleLiveState } from '../../types/transit';
 import type { Origin } from '../../types/ui';
 import {
-  baseVariants, directionArrows, pickStops, rankedStops, shapeFrom, vehicleLabel, type MapScene, type MapTarget,
+  baseVariants,
+  directionArrows,
+  pickStops,
+  rankedStops,
+  shapeFrom,
+  vehicleLabel,
+  type MapScene,
+  type MapTarget,
 } from './mapModel';
 
 interface Props {
@@ -102,6 +107,34 @@ function clickable(el: HTMLElement, label: string, onActivate: () => void) {
   });
 }
 
+function buildCredits(lang: Lang): string[] {
+  const isEn = lang === 'en';
+  const credits = [
+    isEn
+      ? 'Map <a href="https://openfreemap.org" target="_blank" rel="noreferrer">OpenFreeMap</a>'
+      : 'แผนที่ <a href="https://openfreemap.org" target="_blank" rel="noreferrer">OpenFreeMap</a>',
+    isEn
+      ? 'Walking <a href="https://routing.openstreetmap.de" target="_blank" rel="noreferrer">FOSSGIS</a>'
+      : 'ทางเดิน <a href="https://routing.openstreetmap.de" target="_blank" rel="noreferrer">FOSSGIS</a>',
+  ];
+  if (activeProvider.id !== 'mock') {
+    credits.unshift(
+      isEn
+        ? 'Route data &copy; <a href="https://namtang-api.otp.go.th/opendata" target="_blank" rel="noreferrer">OTP Thailand</a> (CC BY 4.0)'
+        : 'ข้อมูลเส้นทาง &copy; <a href="https://namtang-api.otp.go.th/opendata" target="_blank" rel="noreferrer">สนข.</a> (CC BY 4.0)',
+    );
+  }
+  return credits;
+}
+
+function localizedVehicleLabel(network: TransitNetwork, vs: VehicleLiveState, lang: Lang): string {
+  if (lang !== 'en') return vehicleLabel(network, vs);
+  const route = network.routeById[vs.routeId];
+  const variant = network.variantById[vs.variantId];
+  const headsign = variant ? pickName(lang, variant.headsignTh, variant.headsignEn) : '';
+  return `Route ${route.shortName}${headsign ? ` ${headsign}` : ''} · ${statusLabel(vs.status)} · ${crowdLabel(vs.crowd).short}`;
+}
+
 /** Replaces the style's own 3D layer with plain grey boxes that appear only when zoomed in. */
 function addBuildings(map: MlMap) {
   const layers = map.getStyle().layers ?? [];
@@ -120,7 +153,15 @@ function addBuildings(map: MlMap) {
         'fill-extrusion-color': '#d6dde6',
         'fill-extrusion-height': ['coalesce', ['get', 'render_height'], 8],
         'fill-extrusion-base': ['coalesce', ['get', 'render_min_height'], 0],
-        'fill-extrusion-opacity': ['interpolate', ['linear'], ['zoom'], BUILDINGS_MIN_ZOOM, 0, BUILDINGS_MIN_ZOOM + 0.5, 0.85],
+        'fill-extrusion-opacity': [
+          'interpolate',
+          ['linear'],
+          ['zoom'],
+          BUILDINGS_MIN_ZOOM,
+          0,
+          BUILDINGS_MIN_ZOOM + 0.5,
+          0.85,
+        ],
       },
     },
     firstLabel,
@@ -132,15 +173,38 @@ function addOverlayLayers(map: MlMap) {
     map.addSource(id, { type: 'geojson', data: collection([]) });
   }
   const round = { 'line-cap': 'round', 'line-join': 'round' } as const;
-  map.addLayer({ id: 'bb-accuracy', type: 'fill', source: 'bb-accuracy', paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.08 } });
   map.addLayer({
-    id: 'bb-routes', type: 'line', source: 'bb-routes', layout: round,
+    id: 'bb-accuracy',
+    type: 'fill',
+    source: 'bb-accuracy',
+    paint: { 'fill-color': '#2563eb', 'fill-opacity': 0.08 },
+  });
+  map.addLayer({
+    id: 'bb-routes',
+    type: 'line',
+    source: 'bb-routes',
+    layout: round,
     paint: { 'line-color': ['get', 'color'], 'line-width': ['get', 'width'], 'line-opacity': ['get', 'opacity'] },
   });
-  map.addLayer({ id: 'bb-hl-casing', type: 'line', source: 'bb-hl', layout: round, paint: { 'line-color': '#ffffff', 'line-width': 10, 'line-opacity': 0.9 } });
-  map.addLayer({ id: 'bb-hl', type: 'line', source: 'bb-hl', layout: round, paint: { 'line-color': ['get', 'color'], 'line-width': 6 } });
   map.addLayer({
-    id: 'bb-walks', type: 'line', source: 'bb-walks', layout: round,
+    id: 'bb-hl-casing',
+    type: 'line',
+    source: 'bb-hl',
+    layout: round,
+    paint: { 'line-color': '#ffffff', 'line-width': 10, 'line-opacity': 0.9 },
+  });
+  map.addLayer({
+    id: 'bb-hl',
+    type: 'line',
+    source: 'bb-hl',
+    layout: round,
+    paint: { 'line-color': ['get', 'color'], 'line-width': 6 },
+  });
+  map.addLayer({
+    id: 'bb-walks',
+    type: 'line',
+    source: 'bb-walks',
+    layout: round,
     paint: { 'line-color': '#334155', 'line-width': 4, 'line-dasharray': [0, 2] },
   });
 }
@@ -158,6 +222,7 @@ function applyLabelLanguage(map: MlMap, lang: Lang) {
 export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef, onSelect, onTilesFailed }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MlMap | null>(null);
+  const attrControlRef = useRef<AttributionControl | null>(null);
   const stopMarkers = useRef<Marker[]>([]);
   const arrowMarkers = useRef<Marker[]>([]);
   const overlayMarkers = useRef<Marker[]>([]);
@@ -185,6 +250,7 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
     const el = containerRef.current;
     if (!el) return;
     const vehicles = vehicleMarkers.current;
+
     let map: MlMap;
     try {
       map = new maplibregl.Map({
@@ -204,14 +270,6 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
     map.touchZoomRotate.disableRotation();
     map.keyboard.disableRotation();
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left');
-    const credits = [
-      'แผนที่ <a href="https://openfreemap.org" target="_blank" rel="noreferrer">OpenFreeMap</a>',
-      'ทางเดิน <a href="https://routing.openstreetmap.de" target="_blank" rel="noreferrer">FOSSGIS</a>',
-    ];
-    if (activeProvider.id !== 'mock') {
-      credits.unshift('ข้อมูลเส้นทาง &copy; <a href="https://namtang-api.otp.go.th/opendata" target="_blank" rel="noreferrer">สนข.</a> (CC BY 4.0)');
-    }
-    map.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: credits }), 'top-right');
 
     let loaded = false;
     let failed = false;
@@ -236,8 +294,12 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
           const vid = e.features?.[0]?.properties?.variantId;
           if (typeof vid === 'string') onSelectRef.current({ kind: 'variant', id: vid });
         });
-        map.on('mouseenter', id, () => { map.getCanvas().style.cursor = 'pointer'; });
-        map.on('mouseleave', id, () => { map.getCanvas().style.cursor = ''; });
+        map.on('mouseenter', id, () => {
+          map.getCanvas().style.cursor = 'pointer';
+        });
+        map.on('mouseleave', id, () => {
+          map.getCanvas().style.cursor = '';
+        });
       }
       setReady(true);
     });
@@ -260,11 +322,27 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
       window.clearTimeout(failTimer);
       ro.disconnect();
       vehicles.clear();
+      attrControlRef.current = null;
       mapRef.current = null;
       setReady(false);
       map.remove(); // also removes every marker
     };
   }, []);
+
+  // Keep attribution control in sync with active language.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (attrControlRef.current) {
+      map.removeControl(attrControlRef.current);
+    }
+    const ctrl = new maplibregl.AttributionControl({
+      compact: true,
+      customAttribution: buildCredits(lang),
+    });
+    map.addControl(ctrl, 'top-right');
+    attrControlRef.current = ctrl;
+  }, [lang]);
 
   // Map labels follow the app language.
   useEffect(() => {
@@ -284,12 +362,14 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
         const route = network.routeById[v.routeId];
         if (!route) continue;
         const rail = route.mode !== undefined && route.mode !== 'bus';
-        base.push(lineFeature(v.shape, {
-          color: route.color,
-          width: (zoomedOut ? 2 : 3) + (rail ? 2 : 0),
-          opacity: rail ? 0.85 : 0.55,
-          variantId: v.id,
-        }));
+        base.push(
+          lineFeature(v.shape, {
+            color: route.color,
+            width: (zoomedOut ? 2 : 3) + (rail ? 2 : 0),
+            opacity: rail ? 0.85 : 0.55,
+            variantId: v.id,
+          }),
+        );
       }
     }
 
@@ -320,7 +400,11 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
 
     setData(map, 'bb-routes', base);
     setData(map, 'bb-hl', hl);
-    setData(map, 'bb-walks', walks.map((w) => lineFeature(w)));
+    setData(
+      map,
+      'bb-walks',
+      walks.map((w) => lineFeature(w)),
+    );
   }, [network, highlightKey, walkKey, focused, zoomedOut, ready]);
 
   // Stops: same selection rules as the 2D map.
@@ -328,8 +412,8 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
     const map = mapRef.current;
     if (!map || !viewport) return;
     for (const m of stopMarkers.current) m.remove();
-    const { highlights, focused: isFocused } = sceneRef.current;
 
+    const { highlights, focused: isFocused } = sceneRef.current;
     const must = new Set<string>();
     if (selectedStopId) must.add(selectedStopId);
     const inScene = new Set<string>();
@@ -355,7 +439,11 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
       const label = selected
         ? `<div style="position:absolute;bottom:100%;left:50%;transform:translateX(-50%);margin-bottom:4px;white-space:nowrap;background:#fff;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:600;box-shadow:0 1px 4px rgba(0,0,0,.25)">${escapeHtml(name)}</div>`
         : '';
-      const el = markerEl('bb-stop-icon', 28, `<div class="bb-stop${selected ? ' bb-stop--selected' : ''}"><span></span></div>${label}`);
+      const el = markerEl(
+        'bb-stop-icon',
+        28,
+        `<div class="bb-stop${selected ? ' bb-stop--selected' : ''}"><span></span></div>${label}`,
+      );
       el.style.zIndex = selected ? '3' : '1';
       clickable(el, stopLabel(network, s, lang), () => onSelectRef.current({ kind: 'stop', id: s.id }));
       return new maplibregl.Marker({ element: el }).setLngLat(toCoord(s.position)).addTo(map);
@@ -368,25 +456,30 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
     if (!map || !snapshot) return;
     const { highlights, focused: isFocused } = sceneRef.current;
     const zoom = viewport?.zoom ?? 13;
+
     const routeFilter = new Set<string>();
     for (const h of highlights) {
       const v = network.variantById[h.variantId];
       if (v) routeFilter.add(v.routeId);
     }
-    const seen = new Set<string>();
 
+    const seen = new Set<string>();
     for (const vs of snapshot.vehicles) {
       const route = network.routeById[vs.routeId];
       if (!route) continue;
       const selected = vs.vehicleId === selectedVehicleId;
       const visible =
         selected ||
-        (isFocused ? routeFilter.has(vs.routeId) : zoom >= VEHICLES_MIN_ZOOM && (!viewport || viewport.contains(vs.position)));
+        (isFocused
+          ? routeFilter.has(vs.routeId)
+          : zoom >= VEHICLES_MIN_ZOOM && (!viewport || viewport.contains(vs.position)));
       if (!visible) continue;
       seen.add(vs.vehicleId);
 
       const compact = !selected && !isFocused && zoom < VEHICLE_LABEL_ZOOM;
-      const cls = ['bb-veh', selected ? 'bb-veh--selected' : '', vs.quality !== 'live' ? 'bb-veh--stale' : ''].filter(Boolean).join(' ');
+      const cls = ['bb-veh', selected ? 'bb-veh--selected' : '', vs.quality !== 'live' ? 'bb-veh--stale' : '']
+        .filter(Boolean)
+        .join(' ');
       const flag = vs.quality === 'delayed' ? '!' : vs.quality === 'unavailable' ? '?' : '';
       const html = compact
         ? `<div class="bb-veh-dot" style="--c:${route.color}"></div>`
@@ -395,7 +488,7 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
           `<span class="bb-veh__body">${route.shortName}</span>` +
           (flag ? `<span class="bb-veh__flag">${flag}</span>` : '') +
           '</div>';
-      const label = vehicleLabel(network, vs);
+      const label = localizedVehicleLabel(network, vs, lang);
 
       const existing = vehicleMarkers.current.get(vs.vehicleId);
       if (existing) {
@@ -415,6 +508,7 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
         vehicleMarkers.current.set(vs.vehicleId, { marker, el, html });
       }
     }
+
     for (const [id, entry] of vehicleMarkers.current) {
       if (!seen.has(id)) {
         entry.marker.remove();
@@ -437,7 +531,11 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
     if (place) {
       const el = markerEl('bb-place-icon', 26, '<div class="bb-place"></div>');
       el.style.zIndex = '4';
-      added.push(new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, 4] }).setLngLat(toCoord(place.position)).addTo(map));
+      added.push(
+        new maplibregl.Marker({ element: el, anchor: 'bottom', offset: [0, 4] })
+          .setLngLat(toCoord(place.position))
+          .addTo(map),
+      );
     }
     overlayMarkers.current = added;
     if (ready) setData(map, 'bb-accuracy', origin?.accuracyM ? [circleFeature(origin.position, origin.accuracyM)] : []);
@@ -457,11 +555,17 @@ export function MapLibreMap({ network, snapshot, scene, fitKey, origin, insetRef
         n = Math.max(n, lat);
       }
       const bottom = Math.min(insetRef.current, map.getContainer().clientHeight * 0.65);
-      map.fitBounds([[w, s], [e, n]], {
-        padding: { top: 56, left: 56, right: 40, bottom: bottom + 32 },
-        maxZoom: 16,
-        duration: prefersReducedMotion() ? 0 : 700,
-      });
+      map.fitBounds(
+        [
+          [w, s],
+          [e, n],
+        ],
+        {
+          padding: { top: 56, left: 56, right: 40, bottom: bottom + 32 },
+          maxZoom: 16,
+          duration: prefersReducedMotion() ? 0 : 700,
+        },
+      );
     }, 80);
     return () => window.clearTimeout(id);
   }, [fitKey, insetRef]);

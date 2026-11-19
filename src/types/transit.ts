@@ -36,6 +36,7 @@ export type FareRule =
 
 export interface FrequencyPeriod {
   labelTh: string;
+  labelEn?: string;
   from: string; // HH:mm (Asia/Bangkok)
   to: string;
   headwayMin: [number, number];
@@ -52,7 +53,8 @@ export interface Route {
   firstDeparture: string;
   lastDeparture: string;
   frequency: FrequencyPeriod[];
-    // Set only for real Namtang data
+
+  // Set for real Namtang data (and optional English names in mock mode)
   mode?: RouteMode;
   agencyTh?: string;
   legacyName?: string;
@@ -111,11 +113,14 @@ export interface Vehicle {
 export interface Disruption {
   id: string;
   titleTh: string;
+  titleEn?: string;
   detailTh: string;
+  detailEn?: string;
   affectedRouteIds: string[];
   segmentStopIds: [string, string];
   extraDelayMin: number;
   alternativeHintTh: string;
+  alternativeHintEn?: string;
 }
 
 export interface ServiceNotice {
@@ -123,13 +128,17 @@ export interface ServiceNotice {
   severity: 'info' | 'warning' | 'disruption';
   routeIds: string[];
   titleTh: string;
+  titleEn?: string;
   detailTh: string;
+  detailEn?: string;
 }
 
 export interface ScenarioConfig {
   id: ScenarioId;
   labelTh: string;
+  labelEn?: string;
   descriptionTh: string;
+  descriptionEn?: string;
   staleVehicleSec: Record<string, number>;
   unavailableVehicleIds: string[];
   crowdRatioByRoute: Record<string, number>;

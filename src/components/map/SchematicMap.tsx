@@ -1,5 +1,6 @@
 import { useMemo, type KeyboardEvent, type MutableRefObject } from 'react';
-import type { LatLng, LiveSnapshot, TransitNetwork } from '../../types/transit';
+import { pickName, useLang, useT, type Lang } from '../../lib/i18n';
+import type { LatLng, LiveSnapshot, TransitNetwork, VehicleLiveState } from '../../types/transit';
 import type { Origin } from '../../types/ui';
 import { baseVariants, directionArrows, shapeFrom, vehicleLabel, type MapScene, type MapTarget } from './mapModel';
 
@@ -16,7 +17,10 @@ function makeProjection(points: LatLng[]) {
   const k = Math.cos((((minLat + maxLat) / 2) * Math.PI) / 180);
   const scale = (W - 2 * PAD) / ((maxLng - minLng) * k);
   const H = (maxLat - minLat) * scale + 2 * PAD;
-  const project = ([lat, lng]: LatLng): [number, number] => [PAD + (lng - minLng) * k * scale, PAD + (maxLat - lat) * scale];
+  const project = ([lat, lng]: LatLng): [number, number] => [
+    PAD + (lng - minLng) * k * scale,
+    PAD + (maxLat - lat) * scale,
+  ];
   return { H, project };
 }
 
@@ -25,6 +29,32 @@ function onActivate(e: KeyboardEvent, fn: () => void) {
     e.preventDefault();
     fn();
   }
+}
+
+function localizedOriginLabel(origin: Origin, network: TransitNetwork, lang: Lang): string {
+  if (lang !== 'en') return origin.labelTh;
+  const extra = origin as Origin & { labelEn?: string };
+  if (extra.labelEn) return extra.labelEn;
+  if (origin.kind === 'gps') return 'Your current location';
+  if (origin.kind === 'demo') return 'Demo starting location';
+  if (origin.kind === 'stop' && origin.refId && network.stopById[origin.refId]) {
+    const s = network.stopById[origin.refId];
+    return pickName(lang, s.nameTh, s.nameEn);
+  }
+  if (origin.kind === 'place' && origin.refId && network.placeById[origin.refId]) {
+    const p = network.placeById[origin.refId];
+    return pickName(lang, p.nameTh, (p as { nameEn?: string }).nameEn);
+  }
+  return origin.labelTh;
+}
+
+function localizedVehicleLabel(network: TransitNetwork, vs: VehicleLiveState, lang: Lang): string {
+  if (lang !== 'en') return vehicleLabel(network, vs);
+  const route = network.routeById[vs.routeId];
+  const variant = network.variantById[vs.variantId];
+  const vehicle = network.vehicleById[vs.vehicleId];
+  const headsign = variant ? pickName(lang, variant.headsignTh, variant.headsignEn) : '';
+  return `Route ${route.shortName}${headsign ? ` to ${headsign}` : ''} (${vehicle.fleetCode})`;
 }
 
 interface Props {
@@ -38,13 +68,26 @@ interface Props {
 
 /** Offline-safe fallback: a simplified SVG of the same data, no tiles needed. */
 export function SchematicMap({ network, snapshot, scene, origin, insetRef, onSelect }: Props) {
+  const lang = useLang();
+  const tr = useT();
+
   const proj = useMemo(
     () => makeProjection([...network.stops.map((s) => s.position), ...network.places.map((p) => p.position)]),
     [network],
   );
+
   const toPath = (pts: LatLng[]) =>
-    pts.map((p, i) => { const [x, y] = proj.project(p); return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`; }).join(' ');
-  const inBounds = (p: LatLng) => { const [x, y] = proj.project(p); return x >= 0 && x <= W && y >= 0 && y <= proj.H; };
+    pts
+      .map((p, i) => {
+        const [x, y] = proj.project(p);
+        return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(' ');
+
+  const inBounds = (p: LatLng) => {
+    const [x, y] = proj.project(p);
+    return x >= 0 && x <= W && y >= 0 && y <= proj.H;
+  };
 
   const highlighted = new Set(scene.highlights.map((h) => h.variantId));
   const labelled = new Set<string>();
@@ -59,24 +102,30 @@ export function SchematicMap({ network, snapshot, scene, origin, insetRef, onSel
         preserveAspectRatio="xMidYMid meet"
         className="h-full w-full"
         role="group"
-        aria-label="แผนผังเส้นทางแบบย่อ ตำแหน่งโดยประมาณ (ข้อมูลจำลอง)"
+        aria-label={tr(
+          'แผนผังเส้นทางแบบย่อ ตำแหน่งโดยประมาณ (ข้อมูลจำลอง)',
+          'Simplified schematic transit map, approximate positions (simulated data)',
+        )}
       >
-        {baseVariants(network).map((v) => (
-          <path
-            key={v.id}
-            d={toPath(v.shape)}
-            fill="none"
-            stroke={network.routeById[v.routeId].color}
-            strokeWidth={highlighted.size ? 3 : 5}
-            strokeOpacity={highlighted.size ? 0.25 : 0.7}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="cursor-pointer"
-            onClick={() => onSelect({ kind: 'variant', id: v.id })}
-          >
-            <title>{`สาย ${network.routeById[v.routeId].shortName}`}</title>
-          </path>
-        ))}
+        {baseVariants(network).map((v) => {
+          const shortName = network.routeById[v.routeId].shortName;
+          return (
+            <path
+              key={v.id}
+              d={toPath(v.shape)}
+              fill="none"
+              stroke={network.routeById[v.routeId].color}
+              strokeWidth={highlighted.size ? 3 : 5}
+              strokeOpacity={highlighted.size ? 0.25 : 0.7}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="cursor-pointer"
+              onClick={() => onSelect({ kind: 'variant', id: v.id })}
+            >
+              <title>{tr(`สาย ${shortName}`, `Route ${shortName}`)}</title>
+            </path>
+          );
+        })}
 
         {scene.highlights.map((h) => {
           const v = network.variantById[h.variantId];
@@ -85,7 +134,14 @@ export function SchematicMap({ network, snapshot, scene, origin, insetRef, onSel
           const pts = shapeFrom(v, h.fromStopIndex, h.toStopIndex);
           return (
             <g key={`${h.variantId}@${h.fromStopIndex}`}>
-              <path d={toPath(pts)} fill="none" stroke="#fff" strokeWidth={9} strokeLinecap="round" strokeLinejoin="round" />
+              <path
+                d={toPath(pts)}
+                fill="none"
+                stroke="#fff"
+                strokeWidth={9}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
               <path
                 d={toPath(pts)}
                 fill="none"
@@ -116,13 +172,14 @@ export function SchematicMap({ network, snapshot, scene, origin, insetRef, onSel
         {network.stops.map((s) => {
           const [x, y] = proj.project(s.position);
           const sel = s.id === scene.selectedStopId;
+          const stopName = pickName(lang, s.nameTh, s.nameEn);
           const select = () => onSelect({ kind: 'stop', id: s.id });
           return (
             <g
               key={s.id}
               role="button"
               tabIndex={0}
-              aria-label={`ป้าย${s.nameTh}`}
+              aria-label={tr(`ป้าย${stopName}`, `Stop: ${stopName}`)}
               className="bb-svg-btn cursor-pointer"
               transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`}
               onClick={select}
@@ -130,36 +187,58 @@ export function SchematicMap({ network, snapshot, scene, origin, insetRef, onSel
             >
               <circle r={13} fill="transparent" />
               <circle className="bb-focus" r={sel ? 12 : 10} fill="none" stroke="transparent" strokeWidth={3} />
-              <circle r={sel ? 7 : 5} fill="#fff" stroke={sel ? '#0f172a' : '#0f6b63'} strokeWidth={sel ? 4 : 2.5} />
+              <circle
+                r={sel ? 7 : 5}
+                fill="#fff"
+                stroke={sel ? '#0f172a' : '#0f6b63'}
+                strokeWidth={sel ? 4 : 2.5}
+              />
               {labelled.has(s.id) && (
-                <text x={9} y={3.5} fontSize={sel ? 11 : 9} fontWeight={sel ? 700 : 500} fill="#0f172a" stroke="#fff" strokeWidth={3} paintOrder="stroke">
-                  {s.nameTh}
+                <text
+                  x={9}
+                  y={3.5}
+                  fontSize={sel ? 11 : 9}
+                  fontWeight={sel ? 700 : 500}
+                  fill="#0f172a"
+                  stroke="#fff"
+                  strokeWidth={3}
+                  paintOrder="stroke"
+                >
+                  {stopName}
                 </text>
               )}
             </g>
           );
         })}
 
-        {scene.place && (() => {
-          const [x, y] = proj.project(scene.place.position);
-          return (
-            <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`}>
-              <title>{scene.place.nameTh}</title>
-              <circle r={7} fill="#dc2626" stroke="#fff" strokeWidth={3} />
-            </g>
-          );
-        })()}
+        {scene.place &&
+          (() => {
+            const [x, y] = proj.project(scene.place.position);
+            const placeName = pickName(
+              lang,
+              scene.place.nameTh,
+              (scene.place as { nameEn?: string }).nameEn,
+            );
+            return (
+              <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`}>
+                <title>{placeName}</title>
+                <circle r={7} fill="#dc2626" stroke="#fff" strokeWidth={3} />
+              </g>
+            );
+          })()}
 
-        {origin && inBounds(origin.position) && (() => {
-          const [x, y] = proj.project(origin.position);
-          return (
-            <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`}>
-              <title>{origin.labelTh}</title>
-              <circle r={10} fill="#2563eb" fillOpacity={0.2} />
-              <circle r={6} fill="#2563eb" stroke="#fff" strokeWidth={3} />
-            </g>
-          );
-        })()}
+        {origin &&
+          inBounds(origin.position) &&
+          (() => {
+            const [x, y] = proj.project(origin.position);
+            return (
+              <g transform={`translate(${x.toFixed(1)} ${y.toFixed(1)})`}>
+                <title>{localizedOriginLabel(origin, network, lang)}</title>
+                <circle r={10} fill="#2563eb" fillOpacity={0.2} />
+                <circle r={6} fill="#2563eb" stroke="#fff" strokeWidth={3} />
+              </g>
+            );
+          })()}
 
         {snapshot?.vehicles.map((vs) => {
           const route = network.routeById[vs.routeId];
@@ -167,20 +246,42 @@ export function SchematicMap({ network, snapshot, scene, origin, insetRef, onSel
           const dim = highlighted.size > 0 && !highlighted.has(vs.variantId);
           const sel = vs.vehicleId === scene.selectedVehicleId;
           const flag = vs.quality === 'delayed' ? '!' : vs.quality === 'unavailable' ? '?' : '';
-          const label = vehicleLabel(network, vs);
+          const label = localizedVehicleLabel(network, vs, lang);
           const select = () => onSelect({ kind: 'vehicle', id: vs.vehicleId });
           return (
-            <g key={vs.vehicleId} className="bb-svg-veh" style={{ transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)` }} opacity={dim ? 0.45 : 1}>
-              <g role="button" tabIndex={0} aria-label={label} className="bb-svg-btn cursor-pointer" onClick={select} onKeyDown={(e) => onActivate(e, select)}>
+            <g
+              key={vs.vehicleId}
+              className="bb-svg-veh"
+              style={{ transform: `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px)` }}
+              opacity={dim ? 0.45 : 1}
+            >
+              <g
+                role="button"
+                tabIndex={0}
+                aria-label={label}
+                className="bb-svg-btn cursor-pointer"
+                onClick={select}
+                onKeyDown={(e) => onActivate(e, select)}
+              >
                 <title>{label}</title>
                 <path d="M0,-18 L5,-12 L-5,-12 Z" transform={`rotate(${vs.bearingDeg.toFixed(0)})`} fill={route.color} />
                 <circle className="bb-focus" r={14} fill="none" stroke={sel ? '#0f172a' : 'transparent'} strokeWidth={3} />
-                <circle r={10.5} fill={route.color} stroke="#fff" strokeWidth={2} strokeDasharray={vs.quality !== 'live' ? '3 2' : undefined} />
-                <text textAnchor="middle" y={3} fontSize={8} fontWeight={700} fill="#fff">{route.shortName}</text>
+                <circle
+                  r={10.5}
+                  fill={route.color}
+                  stroke="#fff"
+                  strokeWidth={2}
+                  strokeDasharray={vs.quality !== 'live' ? '3 2' : undefined}
+                />
+                <text textAnchor="middle" y={3} fontSize={8} fontWeight={700} fill="#fff">
+                  {route.shortName}
+                </text>
                 {flag && (
                   <g transform="translate(10 -10)">
                     <circle r={6} fill="#fff" stroke="#64748b" />
-                    <text textAnchor="middle" y={3} fontSize={8} fontWeight={700} fill="#0f172a">{flag}</text>
+                    <text textAnchor="middle" y={3} fontSize={8} fontWeight={700} fill="#0f172a">
+                      {flag}
+                    </text>
                   </g>
                 )}
               </g>

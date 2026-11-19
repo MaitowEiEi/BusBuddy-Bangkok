@@ -1,11 +1,45 @@
 import { SlidersHorizontal } from 'lucide-react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { SCENARIO_LIST, SCENARIOS } from '../data/scenarios';
+import { pickName, useLang, useT } from '../lib/i18n';
 import { useApp } from '../state/AppContext';
 import { useToast } from './ui/Toast';
 
+const SCENARIO_FALLBACK_EN: Record<string, { labelEn: string; descriptionEn: string }> = {
+  normal: {
+    labelEn: 'Normal traffic',
+    descriptionEn: 'Regular operating conditions with typical Bangkok traffic.',
+  },
+  rush: {
+    labelEn: 'Rush hour (crowded)',
+    descriptionEn: 'Higher passenger loads and slower speeds along major corridors.',
+  },
+  peak: {
+    labelEn: 'Peak hour (crowded)',
+    descriptionEn: 'Higher passenger loads and slower speeds along major corridors.',
+  },
+  crowded: {
+    labelEn: 'Crowded buses',
+    descriptionEn: 'Many buses near capacity to test less-crowded alternatives.',
+  },
+  disruption: {
+    labelEn: 'Road disruption',
+    descriptionEn: 'Simulates an incident causing delays and reroute warnings.',
+  },
+  stale: {
+    labelEn: 'Delayed / missing GPS',
+    descriptionEn: 'Some vehicles report delayed or offline signals.',
+  },
+  late: {
+    labelEn: 'Late night / off-hours',
+    descriptionEn: 'Tests outside-service-hours banners and sparse headways.',
+  },
+};
+
 export function DemoControls() {
   const { scenarioId, setScenarioId } = useApp();
+  const lang = useLang();
+  const tr = useT();
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -16,9 +50,14 @@ export function DemoControls() {
   useEffect(() => {
     if (!open) return;
     panelRef.current?.querySelector<HTMLInputElement>('input:checked')?.focus();
-    const onDown = (e: MouseEvent) => { if (!wrapRef.current?.contains(e.target as Node)) setOpen(false); };
+    const onDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { setOpen(false); buttonRef.current?.focus(); }
+      if (e.key === 'Escape') {
+        setOpen(false);
+        buttonRef.current?.focus();
+      }
     };
     document.addEventListener('mousedown', onDown);
     document.addEventListener('keydown', onKey);
@@ -27,6 +66,15 @@ export function DemoControls() {
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  const activeSc = SCENARIOS[scenarioId] as typeof SCENARIOS[typeof scenarioId] & {
+    labelEn?: string;
+  };
+  const activeLabel = pickName(
+    lang,
+    activeSc.labelTh,
+    activeSc.labelEn ?? SCENARIO_FALLBACK_EN[scenarioId]?.labelEn,
+  );
 
   return (
     <div ref={wrapRef} className="relative">
@@ -39,24 +87,42 @@ export function DemoControls() {
         className="inline-flex min-h-11 max-w-[12rem] items-center gap-1.5 rounded-xl bg-amber-50 px-3 text-sm font-medium text-amber-900 ring-1 ring-amber-200 hover:bg-amber-100"
       >
         <SlidersHorizontal aria-hidden className="h-4 w-4 shrink-0" />
-        <span className="truncate">เดโม: {SCENARIOS[scenarioId].labelTh}</span>
+        <span className="truncate">{tr(`เดโม: ${activeLabel}`, `Demo: ${activeLabel}`)}</span>
       </button>
+
       {open && (
         <div
           ref={panelRef}
           id={panelId}
           role="dialog"
-          aria-label="แผงควบคุมเดโม"
+          aria-label={tr('แผงควบคุมเดโม', 'Demo simulation controls')}
           className="absolute right-0 top-full z-[1300] mt-2 w-[min(22rem,calc(100vw-1.5rem))] rounded-2xl bg-white p-4 shadow-xl ring-1 ring-slate-200"
         >
           <fieldset>
-            <legend className="font-semibold">จำลองสถานการณ์การเดินรถ</legend>
-            <p className="text-xs text-ink-muted">ใช้ทดสอบหน้าจอเท่านั้น ข้อมูลทั้งหมดเป็นข้อมูลจำลอง</p>
+            <legend className="font-semibold">
+              {tr('จำลองสถานการณ์การเดินรถ', 'Simulate transit scenario')}
+            </legend>
+            <p className="text-xs text-ink-muted">
+              {tr(
+                'ใช้ทดสอบหน้าจอเท่านั้น ข้อมูลทั้งหมดเป็นข้อมูลจำลอง',
+                'For UI testing only — all vehicle states are simulated.',
+              )}
+            </p>
             <div className="mt-3 space-y-2">
               {SCENARIO_LIST.map((sc) => {
                 const checked = sc.id === scenarioId;
+                const extra = sc as typeof sc & { labelEn?: string; descriptionEn?: string };
+                const fb = SCENARIO_FALLBACK_EN[sc.id];
+                const label = pickName(lang, sc.labelTh, extra.labelEn ?? fb?.labelEn);
+                const desc = pickName(lang, sc.descriptionTh, extra.descriptionEn ?? fb?.descriptionEn);
+
                 return (
-                  <label key={sc.id} className={`flex cursor-pointer gap-3 rounded-xl p-3 ring-1 ${checked ? 'bg-brand-50 ring-brand-600' : 'ring-slate-200 hover:bg-slate-50'}`}>
+                  <label
+                    key={sc.id}
+                    className={`flex cursor-pointer gap-3 rounded-xl p-3 ring-1 ${
+                      checked ? 'bg-brand-50 ring-brand-600' : 'ring-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
                     <input
                       type="radio"
                       name="demo-scenario"
@@ -64,13 +130,19 @@ export function DemoControls() {
                       checked={checked}
                       onChange={() => {
                         setScenarioId(sc.id);
-                        toast(`เปลี่ยนสถานการณ์จำลองเป็น “${sc.labelTh}”`, 'info');
+                        toast(
+                          tr(
+                            `เปลี่ยนสถานการณ์จำลองเป็น “${sc.labelTh}”`,
+                            `Switched demo scenario to "${label}"`,
+                          ),
+                          'info',
+                        );
                       }}
                       className="mt-1 h-4 w-4 accent-brand-700"
                     />
                     <span>
-                      <span className="block text-sm font-medium">{sc.labelTh}</span>
-                      <span className="block text-xs text-ink-muted">{sc.descriptionTh}</span>
+                      <span className="block text-sm font-medium">{label}</span>
+                      <span className="block text-xs text-ink-muted">{desc}</span>
                     </span>
                   </label>
                 );

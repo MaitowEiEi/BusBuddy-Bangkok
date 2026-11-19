@@ -1,3 +1,4 @@
+import { getLang, type Lang } from '../lib/i18n';
 import type { Route, RouteVariant } from '../types/transit';
 import { frequencyAt } from './schedule';
 import { scheduledRideSec } from './travelTime';
@@ -61,7 +62,9 @@ export function formatMinutesOfDay(min: number): string {
   return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 }
 
-export function headwayText(h: Headway): string {
-  if (!h) return 'ไม่มีบริการ';
-  return h[0] === h[1] ? `${h[0]} นาที` : `${h[0]}–${h[1]} นาที`;
+export function headwayText(h: Headway, lang: Lang = getLang()): string {
+  const isEn = lang === 'en';
+  if (!h) return isEn ? 'No service' : 'ไม่มีบริการ';
+  const unit = isEn ? 'min' : 'นาที';
+  return h[0] === h[1] ? `${h[0]} ${unit}` : `${h[0]}–${h[1]} ${unit}`;
 }

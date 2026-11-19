@@ -1,12 +1,30 @@
 import { useEffect, useRef, useState, type MutableRefObject, type PointerEvent, type ReactNode } from 'react';
+import { useLang, useT } from '../../lib/i18n';
 
 const SNAPS = [0.32, 0.58, 0.92];
-const SNAP_LABELS = ['ย่อ', 'ครึ่งจอ', 'เต็มจอ'];
+const SNAP_LABELS_TH = ['ย่อ', 'ครึ่งจอ', 'เต็มจอ'];
+const SNAP_LABELS_EN = ['Collapsed', 'Half screen', 'Full screen'];
 
-interface DragState { startY: number; startFrac: number; height: number; frac: number; moved: boolean }
+interface DragState {
+  startY: number;
+  startFrac: number;
+  height: number;
+  frac: number;
+  moved: boolean;
+}
 
 /** Mobile bottom sheet: tap the handle to cycle sizes, or drag it. */
-export function Sheet({ children, viewKey, insetRef }: { children: ReactNode; viewKey: string; insetRef: MutableRefObject<number> }) {
+export function Sheet({
+  children,
+  viewKey,
+  insetRef,
+}: {
+  children: ReactNode;
+  viewKey: string;
+  insetRef: MutableRefObject<number>;
+}) {
+  const lang = useLang();
+  const tr = useT();
   const ref = useRef<HTMLElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [snap, setSnap] = useState(1);
@@ -22,16 +40,27 @@ export function Sheet({ children, viewKey, insetRef }: { children: ReactNode; vi
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => { insetRef.current = el.offsetHeight; });
+    const ro = new ResizeObserver(() => {
+      insetRef.current = el.offsetHeight;
+    });
     ro.observe(el);
-    return () => { ro.disconnect(); insetRef.current = 0; };
+    return () => {
+      ro.disconnect();
+      insetRef.current = 0;
+    };
   }, [insetRef]);
 
   const onPointerDown = (e: PointerEvent<HTMLButtonElement>) => {
     const parent = ref.current?.parentElement;
     if (!parent) return;
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag.current = { startY: e.clientY, startFrac: SNAPS[snap], height: parent.clientHeight, frac: SNAPS[snap], moved: false };
+    drag.current = {
+      startY: e.clientY,
+      startFrac: SNAPS[snap],
+      height: parent.clientHeight,
+      frac: SNAPS[snap],
+      moved: false,
+    };
   };
 
   const onPointerMove = (e: PointerEvent<HTMLButtonElement>) => {
@@ -49,7 +78,10 @@ export function Sheet({ children, viewKey, insetRef }: { children: ReactNode; vi
     drag.current = null;
     if (!d) return;
     if (d.moved) {
-      const nearest = SNAPS.reduce((best, s, i) => (Math.abs(s - d.frac) < Math.abs(SNAPS[best] - d.frac) ? i : best), 0);
+      const nearest = SNAPS.reduce(
+        (best, s, i) => (Math.abs(s - d.frac) < Math.abs(SNAPS[best] - d.frac) ? i : best),
+        0,
+      );
       setSnap(nearest);
       suppressClick.current = true;
     }
@@ -64,11 +96,15 @@ export function Sheet({ children, viewKey, insetRef }: { children: ReactNode; vi
     setSnap((s) => (s === SNAPS.length - 1 ? 0 : s + 1));
   };
 
+  const snapLabel = lang === 'en' ? SNAP_LABELS_EN[snap] : SNAP_LABELS_TH[snap];
+
   return (
     <section
       ref={ref}
-      aria-label="แผงข้อมูลการเดินทาง"
-      className={`absolute inset-x-0 bottom-0 z-[1100] flex flex-col rounded-t-3xl bg-white shadow-sheet ${dragFrac === null ? 'transition-[height] duration-200' : ''}`}
+      aria-label={tr('แผงข้อมูลการเดินทาง', 'Transit details panel')}
+      className={`absolute inset-x-0 bottom-0 z-[1100] flex flex-col rounded-t-3xl bg-white shadow-sheet ${
+        dragFrac === null ? 'transition-[height] duration-200' : ''
+      }`}
       style={{ height: `${(dragFrac ?? SNAPS[snap]) * 100}%` }}
     >
       <button
@@ -78,12 +114,18 @@ export function Sheet({ children, viewKey, insetRef }: { children: ReactNode; vi
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        aria-label={`ขนาดแผงข้อมูล: ${SNAP_LABELS[snap]} — แตะเพื่อเปลี่ยนขนาด`}
+        aria-label={tr(
+          `ขนาดแผงข้อมูล: ${snapLabel} — แตะเพื่อเปลี่ยนขนาด`,
+          `Panel size: ${snapLabel} — tap or drag to resize`,
+        )}
         className="flex h-9 w-full shrink-0 touch-none items-center justify-center rounded-t-3xl"
       >
         <span aria-hidden className="h-1.5 w-12 rounded-full bg-slate-300" />
       </button>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]">
+      <div
+        ref={scrollRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-[env(safe-area-inset-bottom)]"
+      >
         {children}
       </div>
     </section>

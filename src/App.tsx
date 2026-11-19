@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlightWatcher } from './components/alerts/AlightWatcher';
 import { AppHeader } from './components/AppHeader';
 import { MapView } from './components/map/MapView';
 import { PanelRouter } from './components/panel/PanelRouter';
 import { Sheet } from './components/panel/Sheet';
+import { ErrorBoundary } from './components/ui/ErrorBoundary';
 import { ToastProvider } from './components/ui/Toast';
 import { isScenarioId } from './data/scenarios';
 import { validateNetwork } from './domain/validate';
@@ -12,14 +14,12 @@ import { useMediaQuery } from './hooks/useMediaQuery';
 import { useNetwork } from './hooks/useNetwork';
 import { useNow } from './hooks/useNow';
 import { usePreferences } from './hooks/usePreferences';
+import { useLang, useT } from './lib/i18n';
 import { STORAGE_KEYS } from './lib/storage';
 import { activeProvider } from './services/activeProvider';
 import { AppContext, type AppContextValue } from './state/AppContext';
 import type { ScenarioId, TransitNetwork } from './types/transit';
 import { viewKey, type Origin, type PanelView } from './types/ui';
-import { ErrorBoundary } from './components/ui/ErrorBoundary';
-import { AlightWatcher } from './components/alerts/AlightWatcher';
-import { useLang } from './lib/i18n';
 
 const HOME: PanelView = { kind: 'home' };
 const MAX_HISTORY = 20;
@@ -27,16 +27,19 @@ const MAX_HISTORY = 20;
 function FullScreenMessage({ text, isError = false }: { text: string; isError?: boolean }) {
   return (
     <div className="grid h-dvh place-items-center p-6 text-center">
-      <p role={isError ? 'alert' : 'status'} className={isError ? 'text-red-700' : 'text-ink-soft'}>{text}</p>
+      <p role={isError ? 'alert' : 'status'} className={isError ? 'text-red-700' : 'text-ink-soft'}>
+        {text}
+      </p>
     </div>
   );
 }
 
 export default function App() {
   useLang(); // re-render the whole app when the language changes
+  const tr = useT();
   const { network, error } = useNetwork(activeProvider);
   if (error) return <FullScreenMessage text={error} isError />;
-  if (!network) return <FullScreenMessage text="กำลังโหลดข้อมูลเส้นทาง…" />;
+  if (!network) return <FullScreenMessage text={tr('กำลังโหลดข้อมูลเส้นทาง…', 'Loading transit routes…')} />;
   return (
     <ToastProvider>
       <AppShell network={network} />
@@ -45,6 +48,7 @@ export default function App() {
 }
 
 function AppShell({ network }: { network: TransitNetwork }) {
+  const tr = useT();
   const [scenarioId, setScenarioId] = useLocalStorage<ScenarioId>(STORAGE_KEYS.scenario, 'normal', isScenarioId);
   const { snapshot, error: liveError, refresh } = useLiveSnapshot(activeProvider, scenarioId, true);
   const now = useNow(1000);
@@ -63,7 +67,6 @@ function AppShell({ network }: { network: TransitNetwork }) {
 
   const view = history[history.length - 1];
   const key = viewKey(view);
-
   const navigate = useCallback(
     (next: PanelView) =>
       setHistory((h) => (viewKey(h[h.length - 1]) === viewKey(next) ? h : [...h, next].slice(-MAX_HISTORY))),
@@ -92,10 +95,37 @@ function AppShell({ network }: { network: TransitNetwork }) {
 
   const value = useMemo<AppContextValue>(
     () => ({
-      network, snapshot, liveError, refreshLive: refresh, now, scenarioId, setScenarioId,
-      view, canGoBack: history.length > 1, navigate, goBack, goHome, origin, setOrigin,
+      network,
+      snapshot,
+      liveError,
+      refreshLive: refresh,
+      now,
+      scenarioId,
+      setScenarioId,
+      view,
+      canGoBack: history.length > 1,
+      navigate,
+      goBack,
+      goHome,
+      origin,
+      setOrigin,
     }),
-    [network, snapshot, liveError, refresh, now, scenarioId, setScenarioId, view, history.length, navigate, goBack, goHome, origin, setOrigin],
+    [
+      network,
+      snapshot,
+      liveError,
+      refresh,
+      now,
+      scenarioId,
+      setScenarioId,
+      view,
+      history.length,
+      navigate,
+      goBack,
+      goHome,
+      origin,
+      setOrigin,
+    ],
   );
 
   return (
@@ -105,19 +135,19 @@ function AppShell({ network }: { network: TransitNetwork }) {
         href="#bb-panel"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[1500] focus:rounded-xl focus:bg-white focus:px-4 focus:py-2 focus:shadow-lg"
       >
-        ข้ามไปที่ข้อมูลการเดินทาง
+        {tr('ข้ามไปที่ข้อมูลการเดินทาง', 'Skip to transit details')}
       </a>
       {isDesktop ? (
         <div className="flex h-dvh">
           <div className="flex w-[26rem] shrink-0 flex-col border-r border-slate-200 bg-white xl:w-[28rem]">
             <AppHeader />
             <main id="bb-panel" tabIndex={-1} ref={panelScrollRef} className="min-h-0 flex-1 overflow-y-auto">
-            <ErrorBoundary key={key} onReset={goHome}>
-              <PanelRouter />
-            </ErrorBoundary>
+              <ErrorBoundary key={key} onReset={goHome}>
+                <PanelRouter />
+              </ErrorBoundary>
             </main>
           </div>
-          <section aria-label="แผนที่" className="relative min-w-0 flex-1">
+          <section aria-label={tr('แผนที่', 'Map')} className="relative min-w-0 flex-1">
             <MapView insetRef={insetRef} />
           </section>
         </div>
@@ -128,9 +158,9 @@ function AppShell({ network }: { network: TransitNetwork }) {
             <MapView insetRef={insetRef} />
             <Sheet viewKey={key} insetRef={insetRef}>
               <div id="bb-panel" tabIndex={-1}>
-              <ErrorBoundary key={key} onReset={goHome}>
-                <PanelRouter />
-              </ErrorBoundary>
+                <ErrorBoundary key={key} onReset={goHome}>
+                  <PanelRouter />
+                </ErrorBoundary>
               </div>
             </Sheet>
           </main>
@@ -139,3 +169,4 @@ function AppShell({ network }: { network: TransitNetwork }) {
     </AppContext.Provider>
   );
 }
+  

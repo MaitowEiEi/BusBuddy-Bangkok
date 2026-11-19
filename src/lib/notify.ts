@@ -1,3 +1,5 @@
+import { getLang, type Lang } from './i18n';
+
 export type NotifyPermission = 'granted' | 'denied' | 'default' | 'unsupported';
 
 export function notifyPermission(): NotifyPermission {
@@ -28,14 +30,17 @@ export function showSystemNotification(title: string, body: string, tag: string)
   }
 }
 
-/** Reads a message aloud in Thai, if the device supports speech. */
-export function speak(text: string): void {
+/** Reads a message aloud in the active language (Thai or English), if the device supports speech. */
+export function speak(text: string, lang: Lang = getLang()): void {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'th-TH';
-  const thai = window.speechSynthesis.getVoices().find((v) => v.lang.startsWith('th'));
-  if (thai) u.voice = thai;
+  const prefix = lang === 'en' ? 'en' : 'th';
+  u.lang = lang === 'en' ? 'en-US' : 'th-TH';
+  const matchedVoice = window.speechSynthesis
+    .getVoices()
+    .find((v) => v.lang.toLowerCase().startsWith(prefix));
+  if (matchedVoice) u.voice = matchedVoice;
   window.speechSynthesis.speak(u);
 }
 
